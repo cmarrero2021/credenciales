@@ -63,23 +63,22 @@
             </div>
           </div>
           <!-- ///////////////////////////// -->
-<!-- En el template, dentro del v-slot:top, después de los filtros existentes -->
-<div class="full-width row wrap items-center q-mb-md" v-if="!isQuickEditMode">
-  <!-- Agregar esto después de los otros filtros -->
-  <div class="col-3 q-pa-sm">
-    <div class="text-caption q-mb-xs">Filtrar por estado del voto:</div>
-    <q-slider
-      v-model="votoFilter"
-      :min="1"
-      :max="3"
-      :step="1"
-      snap
-      markers
-      label-always
-      :label-value="votoFilter === 1 ? 'Todos' : votoFilter === 2 ? 'Votaron' : 'No Votaron'"
-    />
-  </div>
-</div>
+          <!-- En el template, dentro del v-slot:top, después de los filtros existentes -->
+          <!-- <div class="full-width row wrap items-center q-mb-md" v-if="!isQuickEditMode">
+            <div class="col-3 q-pa-sm">
+              <div class="text-caption q-mb-xs">Filtrar por estado del voto:</div>
+              <q-slider
+                v-model="votoFilter"
+                :min="1"
+                :max="3"
+                :step="1"
+                snap
+                markers
+                label-always
+                :label-value="votoFilter === 1 ? 'Todos' : votoFilter === 2 ? 'Votaron' : 'No Votaron'"
+              />
+            </div>
+          </div> -->
           <!-- ///////////////////////////// -->
         </div>
         <div class="col-xs-2 col-sm-1">
@@ -204,18 +203,18 @@
                   option-value="value" />
               </div>
               <div class="col-12 col-md-6">
-                <q-select v-model="editForm.area" :options="optionsu.area" label="Área" filled option-label="label"
+                <q-select v-model="editForm.area" :options="optionsu.area" label="Adscripción" filled option-label="label"
                   option-value="value" />
               </div>
               <div class="col-12 col-md-6">
-                <q-select v-model="editForm.estado" :options="optionsu.estado" label="Estado" filled
+                <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled
                   option-label="label" option-value="value" />
               </div>
-              <div class="col-12">
+              <!-- <div class="col-12">
                 <q-input :model-value="editForm.observaciones"
                   @update:model-value="val => editForm.observaciones = val.toUpperCase()" label="Observaciones"
                   type="textarea" filled />
-              </div>
+              </div> -->
             </div>
             <div class="row justify-end">
               <q-btn icon="cancel" color="negative" type="reset" @click="closeEditModal" />
@@ -244,9 +243,9 @@ const columns = [
   { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, filterable: false, align: 'left', type: 'text' },
   { name: 'institucion', label: 'Institución', field: 'institucion', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'sede', label: 'Sede', field: 'sede', sortable: true, filterable: true, align: 'left', type: 'select' },
-  { name: 'area', label: 'Área', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
-  { name: 'estado', label: 'Estado', field: 'estado', sortable: true, filterable: true, align: 'left', type: 'select' },
-  { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, filterable: false, align: 'left', type: 'text' },
+  { name: 'area', label: 'Adscripción', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
+  { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
+  // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, filterable: false, align: 'left', type: 'text' },
 ];
 
 // Columnas para el modo edición rápida
@@ -254,7 +253,7 @@ const quickEditColumns = [
   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, align: 'left' },
   { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, align: 'left' },
   { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, align: 'left' },
-  { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
+  // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
   { name: 'controles', label: 'Controles', align: 'right' }
 ];
 
@@ -295,7 +294,7 @@ const filters = ref({
   areas: null,
   institucion: null,
   sede: null,
-  estado: null,
+  cargo: null,
   indice: null
 });
 
@@ -304,13 +303,13 @@ const options = ref({
   areas: [],
   institucion: [],
   sede: [],
-  estado: [],
+  cargo: [],
 });
 const optionsu = ref({
   areas: [],
   institucion: [],
   sede: [],
-  estado: [],
+  cargo: [],
 });
 
 // Estado del modal de edición
@@ -365,11 +364,11 @@ const fetchOptions = async () => {
     }));
 
     // Obtener estados
-    const estadosResponse = await axios.get(estadosURL);
-    options.value.estado = estadosResponse.data.map(item => item.estado);
-    const estadosResponseU = await axios.get(estadosLsURL);
-    optionsu.value.estado = estadosResponseU.data.map(item => ({
-      label: item.estado,
+    const cargosResponse = await axios.get(estadosURL);
+    options.value.cargo = cargosResponse.data.map(item => item.cargo);
+    const cargosResponseU = await axios.get(cargosLsURL);
+    optionsu.value.cargo = cargosResponseU.data.map(item => ({
+      label: item.cargo,
       value: item.id
     }));
 
@@ -394,7 +393,7 @@ const clearAllFilters = () => {
     filters.value[filter] = null;
   }
   searchQuery.value = '';
-  votoFilter.value = 1;
+  // votoFilter.value = 1;
 };
 
 // Borrar la búsqueda general
@@ -410,14 +409,11 @@ const getOptions = (filterName) => {
 // Calcular la lista de revistas filtradas
 /////////////////////////
 const filteredServers = computed(() => {
-  // Primero filtrar por estado de voto
   let votofilteredServers = servers.value.filter(server => {
-    if (votoFilter.value === 1) return true; // Todos
-    if (votoFilter.value === 2) return server.hora_voto; // Votaron
-    return !server.hora_voto; // No votaron
+    return true;
   });
 
-  // Luego filtrar por búsqueda general
+  // Filtrar por búsqueda general
   const searchValue = searchQuery.value.toLowerCase();
   let searchedServers = votofilteredServers.filter(server => {
     return columns

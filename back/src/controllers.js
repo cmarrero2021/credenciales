@@ -40,7 +40,7 @@ exports.createServer = async (req, res) => {
 exports.listServers = async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('SELECT a.institucion_id,a.institucion,a.sede_id,a.sede,a.area_id,a.area,a.cedula,a.nombres,a.hora_voto,a.observaciones FROM vservidores a  ORDER BY a.institucion_id,a.sede_id,a.area_id,a.cedula');
+        const result = await client.query('SELECT a.institucion_id,a.institucion,a.sede_id,a.sede,a.area_id,a.area,a.cedula,a.nombres ||  a.apellidos as nombres,a.cargo_id,a.cargo FROM vservidores a  ORDER BY a.institucion_id,a.sede_id,a.area_id,a.cedula');
         res.status(200).json(result.rows);
     } catch (err) {
         res.status(500).json({ error: 'Error al listar los servidores.' });
@@ -200,13 +200,13 @@ exports.elderState = async (req, res) => {
     }
 };
 // Listado de movilización de servidores por estado
-exports.serverState = async (req, res) => {
+exports.serverPosition = async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('SELECT estado,votaron,porcentaje_votaron,no_votaron,porcentaje_no_votaron,total FROM vmovilizacion_servidores_estados');
+        const result = await client.query('SELECT id,cargo FROM cargos ORDER BY cargo');
         res.status(200).json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: 'Error al listar los servidores.' });
+        res.status(500).json({ error: 'Error al listar los cargos.' });
     } finally {
         client.release();
     }

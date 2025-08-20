@@ -10,7 +10,7 @@ const {
     eldersInsert,
     elderStatistics,
     elderState,
-    serverState,
+    serverPosition,
     elderHour,
     elderHourState,
     elderTotals,
@@ -78,7 +78,7 @@ router.post('/insertar_adultos', eldersInsert);
 router.get('/consulta_renac', readRenac);
 router.get('/adultos_estadisticas', elderStatistics);
 router.get('/adultos_estados', elderState);
-router.get('/servidores_estados', serverState);
+router.get('/servidores_cargos', serverPosition);
 router.get('/instituciones', listInstitutions); // Listar servidores
 router.get('/sedes', listHeadquarters); // Listar sedes
 router.get('/areas', listAreas); // Listar areas

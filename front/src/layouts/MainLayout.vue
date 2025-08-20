@@ -5,7 +5,7 @@
         <q-btn dense flat round icon="menu" @click="toggleLeftDrawer" />
 
         <q-toolbar-title>
-          Seguimiento y Movilización Electoral
+          Gestión de Credenciales MINAAMP
         </q-toolbar-title>
 
         <q-space />
@@ -19,25 +19,27 @@
       <q-list>
         <q-item-label header>Menú Principal</q-item-label>
 
-        <q-item clickable v-ripple to="/inicio">
+        <!-- <q-item clickable v-ripple to="/inicio" v-if="hasPermission('view_admin1')" -->
+        <q-item clickable v-ripple to="/inicio" v-if="hasPermission('view_admin1')">
           <q-item-section avatar>
             <q-icon name="home" />
           </q-item-section>
           <q-item-section>Inicio</q-item-section>
         </q-item>
+
         <q-item clickable v-ripple to="/servers" v-if="hasPermission('view_admin')">
           <q-item-section avatar>
             <q-icon name="person" />
           </q-item-section>
           <q-item-section>Servidores</q-item-section>
         </q-item>
-        <q-item clickable v-ripple to="/massive_servers" v-if="hasPermission('view_admin')">
+        <q-item clickable v-ripple to="/massive_servers" v-if="hasPermission('view_admin1')">
           <q-item-section avatar>
             <q-icon name="people" />
           </q-item-section>
           <q-item-section>Carga masiva servidores</q-item-section>
         </q-item>
-        <q-item clickable v-ripple to="/massive_elders" v-if="hasPermission('view_admin')">
+        <q-item clickable v-ripple to="/massive_elders" v-if="hasPermission('view_admin1')">
           <q-item-section avatar>
             <q-icon name="elderly" />
           </q-item-section>
