@@ -82,7 +82,8 @@ const handleLogin = async () => {
         position: "top",
         timeout: 3000,
       });
-      router.push("/inicio");
+      router.push("/servers");
+      // router.push("/inicio");
       // router.push("/admin");
     } else {
       Notify.create({

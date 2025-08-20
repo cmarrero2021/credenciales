@@ -1,8 +1,8 @@
 {
-  "name": "minaamp-electoral",
+  "name": "minaamp-credenciales",
   "version": "0.0.1",
-  "description": "Seguimiento y Movilización Electoral",
-  "productName": "Seguimiento y Movilización Electoral",
+  "description": "Credenciales MINAAMP",
+  "productName": "Administración de credenciales servidores públicos MINAAMP y entes",
   "author": "cmarrerodb <cmarrerodb@gmail.com>",
   "private": true,
   "scripts": {

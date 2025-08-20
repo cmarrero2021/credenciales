@@ -1,7 +1,8 @@
 const routes = [
   {
     path: "/",
-        component: () => import("pages/login/LoginPage.vue"),
+        component: () => import("pages/revistas_private/MantenedorPage.vue"),
+        // component: () => import("pages/login/LoginPage.vue"),
         meta: { requiresGuest: true },
     // children: [
     //   { path: "", component: () => import("pages/IndexPage.vue") },
