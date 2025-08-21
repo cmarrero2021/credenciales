@@ -7,7 +7,7 @@
     <h4 class="q-mb-md">SERVIDORES</h4>
 
     <q-table
-      title="Lista de Revistas"
+      title="Lista de Servidores"
       :rows="filteredServers"
       :columns="isQuickEditMode ? quickEditColumns : columns"
       :rows-per-page-options="[10, 20, 50]"
@@ -85,6 +85,13 @@
           <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm"
             class="full-width" v-if="hasPermission('view_admin') && !isQuickEditMode" />
         </div>
+      </template>
+
+      <!-- Columna de foto -->
+      <template v-slot:body-cell-foto="props">
+        <q-td :props="props">
+          <img :src="getFotoUrl(props.row.foto_url)" alt="Foto" style="width:48px;height:48px;object-fit:cover;border-radius:50%;border:1px solid #ccc;" />
+        </q-td>
       </template>
 
       <!-- Botones de acción en cada fila (modo normal) -->
@@ -177,7 +184,7 @@
           <div class="text-h6">{{ isEditing ? 'Editar Servidor' : 'Cargar Servidor' }}</div>
         </q-card-section>
 
-        <q-card-section>
+        <q-card-section style="margin-left:25px;">
           <q-form @submit="saveChanges" class="q-gutter-md">
             <div class="row q-col-gutter-md">
               <!-- Campos del formulario -->
@@ -274,6 +281,7 @@ const router = useRouter();
 const votoFilter = ref(1); // 1=Todos, 2=Votaron, 3=No votaron
 // Definición de columnas para la tabla
 const columns = [
+  { name: 'foto', label: 'Foto', field: 'foto_url', align: 'center' },
   { name: 'actions', label: 'Acciones', align: 'left' },
   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, filterable: true, align: 'left', type: 'text' },
   { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, filterable: true, align: 'left', type: 'text' },
@@ -284,6 +292,23 @@ const columns = [
   { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
   // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, filterable: false, align: 'left', type: 'text' },
 ];
+// Función para obtener la URL de la foto (soporta rutas locales y absolutas)
+const apiBase = import.meta.env.VITE_API_URL || '';
+const getFotoUrl = (foto_url) => {
+  if (!foto_url) return apiBase + '/img/no_person.png';
+  const normalized = foto_url.replace(/\\/g, '/');
+  if (normalized.includes('no_person.png')) {
+    return apiBase + '/img/no_person.png';
+  }
+  if (normalized.includes('/uploads/')) {
+    return apiBase + normalized;
+  }
+  if (normalized.startsWith('uploads/')) {
+    return apiBase + '/' + normalized;
+  }
+  // Fallback
+  return apiBase + '/img/no_person.png';
+};
 
 // Columnas para el modo edición rápida
 const quickEditColumns = [

@@ -21,7 +21,10 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json());
-app.use('/public/portadas', express.static(path.join(__dirname, 'uploads')));
+// Exponer la carpeta uploads como /uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Exponer la imagen no_person.png como /img/no_person.png
+app.use('/img/no_person.png', express.static(path.join(__dirname, 'no_person.png')));
 app.use('/auth', routes);
 app.get('/list-endpoints', (req, res) => {
     const endpoints = listEndpoints(app);
