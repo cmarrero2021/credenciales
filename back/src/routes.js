@@ -51,6 +51,8 @@ const {
 
 const router = express.Router();
 
+const upload = require('./upload');
+
 // Rutas Públicas
 router.get('/prueba', prueba);
 router.post('/login', login); // Inicio de sesión
@@ -58,6 +60,9 @@ router.post('/verify-email', verifyEmail); // Verificación de correo electróni
 router.post('/force-logout', forceLogout); // Cierre forzoso de sesión
 // Rutas Protegidas
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
+
+// Upload foto usuario al crear servidor
+router.post('/servidor', upload.single('foto'), createServer); // Crear servidor con foto PNG
 router.post('/servidor', createServer); // Listar servidores
 router.get('/servidores', listServers); // Listar servidores
 router.get('/buscar_servidor/:cedula', seekServer);

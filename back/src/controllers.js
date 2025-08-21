@@ -14,27 +14,34 @@ const {
 // ================================
 // Crear servidores
 exports.createServer = async (req, res) => {
-    const { area_id,institucion_id,sede_id,estado_id,cedula,nombres,hora_voto,observaciones } = req.body;
+    const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id } = req.body;
     const client = await pool.connect();
-    const server = await client.query(
-        'SELECT cedula FROM servidores WHERE cedula = $1',[cedula]
-    );
-    if (server.rowCount > 0) {
-        res.status(409).json({ error: 'La cédula del servidor ya está registrada.' });
-    } else {
-         try {
-            const result = await client.query(
-                'INSERT INTO servidores (cedula,nombres,institucion_id,sede_id,area_id,hora_voto,observaciones,estado_id) VALUES ($4,$5,$2,$3,$1,$6,$7,$8)',[area_id,institucion_id,sede_id,cedula,nombres,hora_voto,observaciones,estado_id]
-            );
-            res.status(200).json({ message: 'Servidor creado exitosamente.' });
-         } catch (err) {
-            res.status(500).json({ error: 'Error al crear el servidor.' });
-         } finally {
-            client.release();
-         }
+    try {
+        const server = await client.query('SELECT cedula FROM servidores WHERE cedula = $1', [cedula]);
+        if (server.rowCount > 0) {
+            return res.status(409).json({ error: 'La cédula del servidor ya está registrada.' });
+        }
+        // Insertar servidor
+        await client.query(
+            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id) VALUES ($4, $5, $6, $2, $3, $1, $7)',
+            [area_id, institucion_id, sede_id, cedula, nombres, apellidos, cargo_id]
+        );
+        // Si hay archivo de foto
+        if (req.file && req.file.path) {
+            // Buscar el usuario_id por la cédula
+            const userRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+            if (userRes.rows.length > 0) {
+                const usuario_id = userRes.rows[0].id;
+                const foto_url = req.file.path.replace(/\\/g, '/');
+                await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
+            }
+        }
+        res.status(200).json({ message: 'Servidor creado exitosamente.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Error al crear el servidor.' });
+    } finally {
+        client.release();
     }
-
-    
 };
 // Listar Servidores
 exports.listServers = async (req, res) => {
