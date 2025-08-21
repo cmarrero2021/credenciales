@@ -712,8 +712,31 @@ exports.deleteServer = async (req, res) => {
     const { cedula } = req.params;
     const client = await pool.connect();
     try {
-        //await client.query('UPDATE servidores SET deleted_at = NOW() WHERE cedula = $1', [cedula]);
-        await client.query('DELETE from servidores WHERE cedula = $1', [cedula]);
+        // Buscar el id del servidor por la cédula
+        const result = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Servidor no encontrado.' });
+        }
+        const usuario_id = result.rows[0].id;
+        // Buscar la foto asociada
+        const fotoRes = await client.query('SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
+        if (fotoRes.rows.length > 0) {
+            const foto_url = fotoRes.rows[0].foto_url;
+            if (foto_url) {
+                const fs = require('fs');
+                // Usar la ruta completa guardada en la base de datos
+                console.log('Intentando borrar foto:', foto_url);
+                if (fs.existsSync(foto_url)) {
+                    try { fs.unlinkSync(foto_url); console.log('Foto eliminada:', foto_url); } catch (e) { console.error('Error al borrar foto:', e); }
+                } else {
+                    console.log('No existe el archivo de foto:', foto_url);
+                }
+            }
+        }
+        // Eliminar la foto asociada en fotos_usuarios
+        await client.query('DELETE FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
+        // Eliminar el servidor
+        await client.query('DELETE FROM servidores WHERE cedula = $1', [cedula]);
         res.status(200).json({ message: 'Servidor eliminado.' });
     } catch (err) {
         res.status(500).json({ error: 'Error al eliminar el servidor.' });
