@@ -58,6 +58,14 @@ exports.listServers = async (req, res) => {
     const client = await pool.connect();
     try {
         // Consulta con LEFT JOIN para obtener la foto asociada (si existe)
+        // const result = await client.query(`
+        //     SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
+        //            a.nombres, a.apellidos, a.cargo_id, a.cargo,
+        //            f.foto_url
+        //     FROM vservidores a
+        //     LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
+        //     ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
+        // `);
         const result = await client.query(`
             SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
                    a.nombres || ' ' || a.apellidos as nombres, a.cargo_id, a.cargo,
@@ -109,42 +117,95 @@ exports.seekServer = async (req, res) => {
 };
 exports.updateServer = async (req, res) => {
     const { cedula } = req.params;
-    const { area_id, institucion_id, sede_id, nombres, hora_voto, observaciones } = req.body;
+    const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id } = req.body;
     const client = await pool.connect();
+    const fs = require('fs');
+    let fotoPath = req.file && req.file.path ? req.file.path : null;
     try {
+        // Verificar que la cédula existe
+        const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+        if (existsRes.rows.length === 0) {
+            if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) {} }
+            return res.status(404).json({ error: 'La cédula no existe.' });
+        }
+
         const updates = [];
         const values = [];
 
         if (area_id !== undefined) {
             updates.push('area_id = $' + (values.length + 1));
-            values.push(area_id);
+            values.push(parseInt(area_id));
         }
         if (institucion_id !== undefined) {
             updates.push('institucion_id = $' + (values.length + 1));
-            values.push(institucion_id);
+            values.push(parseInt(institucion_id));
         }
         if (sede_id !== undefined) {
             updates.push('sede_id = $' + (values.length + 1));
-            values.push(sede_id);
+            values.push(parseInt(sede_id));
+        }
+        if (cargo_id !== undefined) {
+            updates.push('cargo_id = $' + (values.length + 1));
+            values.push(parseInt(cargo_id));
         }
         if (nombres !== undefined) {
             updates.push('nombres = $' + (values.length + 1));
             values.push(nombres);
         }
-        if (hora_voto !== undefined) {
-            updates.push('hora_voto = $' + (values.length + 1));
-            values.push(hora_voto);
-        }
-        if (observaciones !== undefined) {
-            updates.push('observaciones = $' + (values.length + 1));
-            values.push(observaciones);
+        if (apellidos !== undefined) {
+            updates.push('apellidos = $' + (values.length + 1));
+            values.push(apellidos);
         }
 
-        values.push(cedula); // Añadir la cedula al final de los valores
-        const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length}`;
-        await client.query(query, values);
+        if (updates.length === 0 && !fotoPath) {
+            return res.status(400).json({ error: 'No hay campos para actualizar.' });
+        }
+
+        // Actualizar datos del servidor si hay campos
+        if (updates.length > 0) {
+            values.push(cedula); // Añadir la cedula al final de los valores
+            const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length}`;
+            // console.log('UPDATE QUERY:', query);
+            // console.log('UPDATE VALUES:', values);
+            // // Construir consulta con valores sustituidos para pgAdmin
+            // let queryForPgAdmin = query;
+            // values.forEach((val, idx) => {
+            //     let v = val;
+            //     if (typeof v === 'string') {
+            //         v = `'${v.replace(/'/g, "''")}'`;
+            //     }
+            //     queryForPgAdmin = queryForPgAdmin.replace(`$${idx+1}`, v);
+            // });
+            // console.log('QUERY PARA PGADMIN:', queryForPgAdmin);
+            const updateRes = await client.query(query, values);
+            if (updateRes.rowCount === 0) {
+                if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) {} }
+                return res.status(400).json({ error: 'No se actualizó ningún registro.' });
+            }
+        }
+
+        // Actualizar foto si se envía
+        if (fotoPath) {
+            const usuario_id = existsRes.rows[0].id;
+            const foto_url = fotoPath.replace(/\\/g, '/');
+            // Eliminar foto anterior si existe
+            const oldFotoRes = await client.query('SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
+            if (oldFotoRes.rows.length > 0) {
+                const oldFoto = oldFotoRes.rows[0].foto_url;
+                if (oldFoto && fs.existsSync(oldFoto)) {
+                    try { fs.unlinkSync(oldFoto); } catch (e) {}
+                }
+                await client.query('UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2', [foto_url, usuario_id]);
+            } else {
+                await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
+            }
+        }
         res.status(200).json({ message: 'Servidor actualizado exitosamente.' });
     } catch (err) {
+        // Eliminar foto si ocurre error
+        if (fotoPath) {
+            try { fs.unlinkSync(fotoPath); } catch (e) {}
+        }
         console.error(err);
         res.status(500).json({ error: 'Error al actualizar el servidor.' });
     } finally {

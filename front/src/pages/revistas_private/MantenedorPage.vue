@@ -103,8 +103,8 @@
               class="q-mr-xs" v-if="hasPermission('view_admin')" />
 
             <!-- Botón Marcas Votó -->
-            <q-btn icon="check" color="secondary" title="Marcar que el servidor votó" size="xs"
-              class="q-mr-xs" @click.stop="startQuickEdit(props.row)" v-if="hasPermission('view_admin')"/>
+            <!-- <q-btn icon="check" color="secondary" title="Marcar que el servidor votó" size="xs"
+              class="q-mr-xs" @click.stop="startQuickEdit(props.row)" v-if="hasPermission('view_admin')"/> -->
 
             <!-- Botón Borrar -->
             <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor" size="xs"
@@ -192,7 +192,7 @@
                 <q-input v-model="editForm.id" label="ID" readonly filled />
               </div>
               <div class="col-12 col-md-6">
-                <q-input v-model="editForm.cedula" label="Cédula" type="number" filled />
+                <q-input v-model="editForm.cedula" label="Cédula" type="number" filled :readonly="isEditing" />
               </div>
               <div class="col-12 col-md-6">
                 <q-input :model-value="editForm.nombres"
@@ -221,7 +221,7 @@
                 <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled
                   option-label="label" option-value="value" />
               </div>
-                <!-- Campo para subir foto PNG -->
+                <!-- Campo para subir foto PNG y previsualización -->
                 <div class="col-12">
                   <q-file
                     v-model="editForm.foto"
@@ -230,12 +230,16 @@
                     accept="image/png"
                     :clearable="true"
                     @rejected="onFileRejected"
-                      @update:model-value="onFotoChange"
+                    @update:model-value="onFotoChange"
                   />
-                    <div v-if="fotoPreview" class="q-mt-md">
-                      <div class="text-caption">Vista previa de la foto:</div>
-                      <img :src="fotoPreview" alt="Vista previa" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;" />
-                    </div>
+                  <div class="q-mt-md">
+                    <div class="text-caption">Vista previa de la foto:</div>
+                    <img
+                      :src="fotoPreview || getFotoUrl(editForm.foto_url)"
+                      alt="Vista previa"
+                      style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;"
+                    />
+                  </div>
                 </div>
               <!-- <div class="col-12">
                 <q-input :model-value="editForm.observaciones"
@@ -245,7 +249,7 @@
             </div>
             <div class="row justify-end">
               <q-btn icon="cancel" color="negative" type="reset" @click="closeEditModal" />
-              <q-btn icon="save" color="primary" type="submit" class="q-ml-sm" />
+              <q-btn icon="save" color="primary" type="submit" class="q-ml-sm" :disable="!editForm.foto && !editForm.foto_url" />
             </div>
           </q-form>
         </q-card-section>
@@ -284,13 +288,13 @@ const columns = [
   { name: 'foto', label: 'Foto', field: 'foto_url', align: 'center' },
   { name: 'actions', label: 'Acciones', align: 'left' },
   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, filterable: true, align: 'left', type: 'text' },
-  { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, filterable: true, align: 'left', type: 'text' },
-  // { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, filterable: false, align: 'left', type: 'text' },
+  { name: 'nombres', label: 'Nombres', field: 'nombres', sortable: true, filterable: true, align: 'left', type: 'text' },
+  { name: 'apellidos', label: 'Apellidos', field: 'apellidos', sortable: true, filterable: true, align: 'left', type: 'text' },
   { name: 'institucion', label: 'Institución', field: 'institucion', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'sede', label: 'Sede', field: 'sede', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'area', label: 'Adscripción', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
-  // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, filterable: false, align: 'left', type: 'text' },
+
 ];
 // Función para obtener la URL de la foto (soporta rutas locales y absolutas)
 const apiBase = import.meta.env.VITE_API_URL || '';
@@ -377,6 +381,36 @@ const optionsu = ref({
 
 const editForm = ref({});
 const isEditing = ref(false);
+// Función para abrir el modal de edición y cargar los datos del servidor seleccionado
+const openEditModal = (row) => {
+  isEditing.value = true;
+  // Inicializar selects con objeto {label, value} correcto
+  editForm.value = {
+    ...row,
+    institucion: optionsu.value.institucion.find(opt => opt.value === row.institucion_id) || null,
+    sede: optionsu.value.sede.find(opt => opt.value === row.sede_id) || null,
+    area: optionsu.value.area.find(opt => opt.value === row.area_id) || null,
+    cargo: optionsu.value.cargo.find(opt => opt.value === row.cargo_id) || null
+  };
+  // Si hay foto, mostrar la previsualización
+  fotoPreview.value = row.foto_url ? getFotoUrl(row.foto_url) : null;
+  editDialog.value = true;
+};
+  // Función para cerrar el modal de edición y limpiar el formulario
+  const closeEditModal = () => {
+    editDialog.value = false;
+    isEditing.value = false;
+    editForm.value = {};
+    fotoPreview.value = null;
+  };
+
+  // Función para abrir el modal para agregar un nuevo servidor
+  const openNewModal = () => {
+    isEditing.value = false;
+    editForm.value = {};
+    fotoPreview.value = null;
+    editDialog.value = true;
+  };
 
 // Estado para el modo edición rápida
 const isQuickEditMode = ref(false);
@@ -504,63 +538,37 @@ const filteredServers = computed(() => {
   });
 });
 /////////////////////////
-// Función para abrir el modal de creación
-const openNewModal = () => {
-  editForm.value = {
-    // Inicializa todos los campos necesarios
-    id: null,
-    area_id: null,
-    institucion_id: null,
-    sede_id: null,
-    cedula: null,
-    nombres: null,
-    apellidos: null,
-    // hora_voto: null,
-    observaciones: null,
-  };
-  editDialog.value = true;
-  isEditing.value = false;
-};
-
-// Función para abrir el modal de edición
-const openEditModal = async (server) => {
-  try {
-    const response = await axios.get(`${servidorDetailURL}${server.cedula}`);
-    editForm.value = { ...response.data };
-    editDialog.value = true;
-    isEditing.value = true;
-  } catch (error) {
-    console.error('Error al obtener los datos del servidor:', error);
-  }
-};
-
-// Función para cerrar el modal de edición
-const closeEditModal = () => {
-  editDialog.value = false;
-};
-
+// Función para guardar cambios (debe ser async y única)
 const saveChanges = async () => {
   try {
+    // Bloquear si no hay foto cargada ni foto previa
+    if (!editForm.value.foto && !editForm.value.foto_url) {
+      Notify.create({
+        type: 'negative',
+        message: 'Debe cargar una foto PNG para guardar los cambios.'
+      });
+      return;
+    }
     const formData = new FormData();
-    formData.append('area_id', isEditing.value ? editForm.value.area_id : editForm.value.area?.value);
-    formData.append('institucion_id', isEditing.value ? editForm.value.institucion_id : editForm.value.institucion?.value);
-    formData.append('sede_id', isEditing.value ? editForm.value.sede_id : editForm.value.sede?.value);
-    formData.append('cargo_id', isEditing.value ? editForm.value.cargo_id : editForm.value.cargo?.value);
+    // Siempre tomar el id seleccionado del q-select
+    formData.append('area_id', editForm.value.area?.value ?? '');
+    formData.append('institucion_id', editForm.value.institucion?.value ?? '');
+    formData.append('sede_id', editForm.value.sede?.value ?? '');
+    formData.append('cargo_id', editForm.value.cargo?.value ?? '');
     formData.append('cedula', editForm.value.cedula);
     formData.append('nombres', editForm.value.nombres?.toUpperCase() ?? '');
     formData.append('apellidos', editForm.value.apellidos?.toUpperCase() ?? '');
+    formData.append('observaciones', editForm.value.observaciones?.toUpperCase() ?? '');
     if (editForm.value.foto) {
       formData.append('foto', editForm.value.foto);
     }
     if (isEditing.value) {
-      // Modo edición (no se sube foto aquí)
       await axios.patch(`${updateServerURL}${editForm.value.cedula}`, Object.fromEntries(formData));
       Notify.create({
         type: 'positive',
         message: 'Los cambios se han guardado correctamente.'
       });
     } else {
-      // Modo creación, se sube foto si existe
       await axios.post(insertServerURL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -579,13 +587,13 @@ const saveChanges = async () => {
       message: mensaje
     });
   }
+};
 // Manejar rechazo de archivo
 const onFileRejected = (rejectedFiles) => {
   Notify.create({
     type: 'negative',
     message: 'Solo se permite subir archivos PNG.'
   });
-};
 };
 
 // Funciones para el modo edición rápida
