@@ -66,6 +66,7 @@ router.post('/servidor', upload.single('foto'), createServer); // Crear servidor
 router.post('/servidor', createServer); // Listar servidores
 router.get('/servidores', listServers); // Listar servidores
 router.get('/buscar_servidor/:cedula', seekServer);
+router.patch('/eliminar_servidor/:cedula', deleteServer);
 router.delete('/eliminar_servidor/:cedula', deleteServer);
 router.patch('/actualizar_servidor/:cedula', updateServer);
 router.post('/actualizar_masiva_servidor', massUpdateServer);
