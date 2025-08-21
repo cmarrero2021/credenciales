@@ -57,8 +57,30 @@ exports.createServer = async (req, res) => {
 exports.listServers = async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('SELECT a.institucion_id,a.institucion,a.sede_id,a.sede,a.area_id,a.area,a.cedula,a.nombres ||  a.apellidos as nombres,a.cargo_id,a.cargo FROM vservidores a  ORDER BY a.institucion_id,a.sede_id,a.area_id,a.cedula');
-        res.status(200).json(result.rows);
+        // Consulta con LEFT JOIN para obtener la foto asociada (si existe)
+        const result = await client.query(`
+            SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
+                   a.nombres || ' ' || a.apellidos as nombres, a.cargo_id, a.cargo,
+                   f.foto_url
+            FROM vservidores a
+            LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
+            ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
+        `);
+        // Verificar existencia física de la foto y asignar imagen por defecto si no existe
+        const fs = require('fs');
+        const path = require('path');
+        const defaultFoto = '/img/no_person.png';
+        const servidores = result.rows.map(row => {
+            let foto_url = row.foto_url;
+            let final_url = defaultFoto;
+            if (foto_url && fs.existsSync(foto_url)) {
+                // Extraer solo el nombre de archivo
+                const filename = path.basename(foto_url);
+                final_url = `/uploads/${filename}`;
+            }
+            return { ...row, foto_url: final_url };
+        });
+        res.status(200).json(servidores);
     } catch (err) {
         res.status(500).json({ error: 'Error al listar los servidores.' });
     } finally {
