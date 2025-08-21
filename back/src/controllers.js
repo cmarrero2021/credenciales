@@ -16,9 +16,15 @@ const {
 exports.createServer = async (req, res) => {
     const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id } = req.body;
     const client = await pool.connect();
+    const fs = require('fs');
+    let fotoPath = req.file && req.file.path ? req.file.path : null;
     try {
         const server = await client.query('SELECT cedula FROM servidores WHERE cedula = $1', [cedula]);
         if (server.rowCount > 0) {
+            // Eliminar foto si fue subida
+            if (fotoPath) {
+                try { fs.unlinkSync(fotoPath); } catch (e) {}
+            }
             return res.status(409).json({ error: 'La cédula del servidor ya está registrada.' });
         }
         // Insertar servidor
@@ -27,17 +33,21 @@ exports.createServer = async (req, res) => {
             [area_id, institucion_id, sede_id, cedula, nombres, apellidos, cargo_id]
         );
         // Si hay archivo de foto
-        if (req.file && req.file.path) {
+        if (fotoPath) {
             // Buscar el usuario_id por la cédula
             const userRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
             if (userRes.rows.length > 0) {
                 const usuario_id = userRes.rows[0].id;
-                const foto_url = req.file.path.replace(/\\/g, '/');
+                const foto_url = fotoPath.replace(/\\/g, '/');
                 await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
             }
         }
         res.status(200).json({ message: 'Servidor creado exitosamente.' });
     } catch (err) {
+        // Eliminar foto si fue subida y ocurre cualquier error
+        if (fotoPath) {
+            try { fs.unlinkSync(fotoPath); } catch (e) {}
+        }
         res.status(500).json({ error: 'Error al crear el servidor.' });
     } finally {
         client.release();
