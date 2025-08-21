@@ -192,8 +192,12 @@
                   @update:model-value="val => editForm.nombres = val.toUpperCase()" label="Nombres" filled />
               </div>
               <div class="col-12 col-md-6">
-                <q-input v-model="editForm.hora_voto" label="Votó" type="time" filled />
+                <q-input :model-value="editForm.apellidos"
+                  @update:model-value="val => editForm.apellidos = val.toUpperCase()" label="Apellidos" filled />
               </div>
+              <!-- <div class="col-12 col-md-6">
+                <q-input v-model="editForm.hora_voto" label="Votó" type="time" filled />
+              </div> -->
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.institucion" :options="optionsu.institucion" label="Institución" filled
                   option-label="label" option-value="value" />
@@ -210,6 +214,17 @@
                 <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled
                   option-label="label" option-value="value" />
               </div>
+                <!-- Campo para subir foto PNG -->
+                <div class="col-12">
+                  <q-file
+                    v-model="editForm.foto"
+                    label="Foto PNG del usuario"
+                    filled
+                    accept="image/png"
+                    :clearable="true"
+                    @rejected="onFileRejected"
+                  />
+                </div>
               <!-- <div class="col-12">
                 <q-input :model-value="editForm.observaciones"
                   @update:model-value="val => editForm.observaciones = val.toUpperCase()" label="Observaciones"
@@ -240,7 +255,7 @@ const columns = [
   { name: 'actions', label: 'Acciones', align: 'left' },
   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, filterable: true, align: 'left', type: 'text' },
   { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, filterable: true, align: 'left', type: 'text' },
-  { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, filterable: false, align: 'left', type: 'text' },
+  // { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, filterable: false, align: 'left', type: 'text' },
   { name: 'institucion', label: 'Institución', field: 'institucion', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'sede', label: 'Sede', field: 'sede', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'area', label: 'Adscripción', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
@@ -259,7 +274,8 @@ const quickEditColumns = [
 
 // URLs de los endpoints
 const apiURL = import.meta.env.VITE_API_URL;
-const estadosURL = import.meta.env.VITE_ESTADOR_BASE_URL;
+const estadosURL = import.meta.env.VITE_MP_ESTADOSS_URL;
+// const estadosURL = import.meta.env.VITE_ESTADOR_BASE_URL;
 const estadosLsURL = import.meta.env.VITE_LS_ESTADOS_URL;
 const servidoresURL = import.meta.env.VITE_LS_SERVERS_URL
 const institucionesURL = import.meta.env.VITE_LS_INSTITUTIONS_URL;
@@ -366,7 +382,8 @@ const fetchOptions = async () => {
     // Obtener estados
     const cargosResponse = await axios.get(estadosURL);
     options.value.cargo = cargosResponse.data.map(item => item.cargo);
-    const cargosResponseU = await axios.get(cargosLsURL);
+    const cargosResponseU = await axios.get(estadosURL);
+    // const cargosResponseU = await axios.get(cargosLsURL);
     optionsu.value.cargo = cargosResponseU.data.map(item => ({
       label: item.cargo,
       value: item.id
@@ -452,7 +469,8 @@ const openNewModal = () => {
     sede_id: null,
     cedula: null,
     nombres: null,
-    hora_voto: null,
+    apellidos: null,
+    // hora_voto: null,
     observaciones: null,
   };
   editDialog.value = true;
@@ -478,51 +496,51 @@ const closeEditModal = () => {
 
 const saveChanges = async () => {
   try {
-    const servidorData = {
-      area_id: isEditing.value
-        ? editForm.value.area_id
-        : editForm.value.area?.value,
-
-      institucion_id: isEditing.value
-        ? editForm.value.institucion_id
-        : editForm.value.institucion?.value,
-
-      sede_id: isEditing.value
-        ? editForm.value.sede_id
-        : editForm.value.sede?.value,
-
-      cedula: editForm.value.cedula,
-      nombres: editForm.value.nombres?.toUpperCase() ?? '',
-      hora_voto: editForm.value.hora_voto,
-      observaciones: editForm.value.observaciones?.toUpperCase() ?? '',
-    };
+    const formData = new FormData();
+    formData.append('area_id', isEditing.value ? editForm.value.area_id : editForm.value.area?.value);
+    formData.append('institucion_id', isEditing.value ? editForm.value.institucion_id : editForm.value.institucion?.value);
+    formData.append('sede_id', isEditing.value ? editForm.value.sede_id : editForm.value.sede?.value);
+    formData.append('cargo_id', isEditing.value ? editForm.value.cargo_id : editForm.value.cargo?.value);
+    formData.append('cedula', editForm.value.cedula);
+    formData.append('nombres', editForm.value.nombres?.toUpperCase() ?? '');
+    formData.append('apellidos', editForm.value.apellidos?.toUpperCase() ?? '');
+    if (editForm.value.foto) {
+      formData.append('foto', editForm.value.foto);
+    }
     if (isEditing.value) {
-      // Modo edición
-      await axios.patch(`${updateServerURL}${editForm.value.cedula}`, servidorData);
+      // Modo edición (no se sube foto aquí)
+      await axios.patch(`${updateServerURL}${editForm.value.cedula}`, Object.fromEntries(formData));
       Notify.create({
         type: 'positive',
         message: 'Los cambios se han guardado correctamente.'
       });
     } else {
-      // Modo creación
-      await axios.post(insertServerURL, servidorData);
+      // Modo creación, se sube foto si existe
+      await axios.post(insertServerURL, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       Notify.create({
         type: 'positive',
-        message: 'La revista se ha creado correctamente.'
+        message: 'El servidor se ha creado correctamente.'
       });
     }
-
-    // Actualizar la lista de revistas
     await fetchServers();
     closeEditModal();
   } catch (error) {
     const cedula = editForm.value.cedula;
-    const mensaje = error.response.status === 409 ? `La cédula ${cedula} ya se encuentra registrada.` : `Ha ocurrido un error ${error} y no se han guardar los cambios.`;
+    const mensaje = error.response?.status === 409 ? `La cédula ${cedula} ya se encuentra registrada.` : `Ha ocurrido un error ${error} y no se han guardado los cambios.`;
     Notify.create({
       type: 'negative',
       message: mensaje
     });
   }
+// Manejar rechazo de archivo
+const onFileRejected = (rejectedFiles) => {
+  Notify.create({
+    type: 'negative',
+    message: 'Solo se permite subir archivos PNG.'
+  });
+};
 };
 
 // Funciones para el modo edición rápida
