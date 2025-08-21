@@ -6,8 +6,19 @@ const storage = multer.diskStorage({
     cb(null, path.join(__dirname, '../uploads'));
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    // Obtener la cédula del body (puede venir como string o number)
+    const cedula = req.body.cedula || 'nocedula';
+    // Obtener timestamp actual en formato YYYYMMDD_HHMMSS
+    const now = new Date();
+    const pad = n => n.toString().padStart(2, '0');
+    const YYYY = now.getFullYear();
+    const MM = pad(now.getMonth() + 1);
+    const DD = pad(now.getDate());
+    const HH = pad(now.getHours());
+    const mm = pad(now.getMinutes());
+    const ss = pad(now.getSeconds());
+    const timestamp = `${YYYY}${MM}${DD}_${HH}${mm}${ss}`;
+    cb(null, `${timestamp}_${cedula}.png`);
   }
 });
 

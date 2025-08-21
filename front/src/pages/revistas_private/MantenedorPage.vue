@@ -223,7 +223,12 @@
                     accept="image/png"
                     :clearable="true"
                     @rejected="onFileRejected"
+                      @update:model-value="onFotoChange"
                   />
+                    <div v-if="fotoPreview" class="q-mt-md">
+                      <div class="text-caption">Vista previa de la foto:</div>
+                      <img :src="fotoPreview" alt="Vista previa" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;" />
+                    </div>
                 </div>
               <!-- <div class="col-12">
                 <q-input :model-value="editForm.observaciones"
@@ -243,7 +248,24 @@
 </template>
 
 <script setup>
+// Estado del modal de edición
+const editDialog = ref(false);
 import { ref, onMounted, computed, watch } from 'vue';
+// Vista previa de la foto
+const fotoPreview = ref(null);
+
+const onFotoChange = (file) => {
+  if (file && file instanceof File) {
+    fotoPreview.value = URL.createObjectURL(file);
+  } else {
+    fotoPreview.value = null;
+  }
+};
+
+// Limpiar vista previa al cerrar modal
+watch(editDialog, (val) => {
+  if (!val) fotoPreview.value = null;
+});
 import { LocalStorage, Notify } from 'quasar'
 import axios from 'axios';
 import { useRouter } from 'vue-router';
@@ -328,8 +350,6 @@ const optionsu = ref({
   cargo: [],
 });
 
-// Estado del modal de edición
-const editDialog = ref(false);
 const editForm = ref({});
 const isEditing = ref(false);
 
