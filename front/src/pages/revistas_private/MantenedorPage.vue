@@ -168,7 +168,7 @@
             />
           </div>
         </q-td>
-        <q-td v-else-if="isQuickEditMode"></q-td>
+        <q-td v-else></q-td>
       </template>
 
       <!-- Estado de carga -->
@@ -259,6 +259,20 @@
 </template>
 
 <script setup>
+// Ordenamiento múltiple para la tabla
+const customSort = (rows, sortBy, descending) => {
+  if (!Array.isArray(sortBy)) sortBy = [sortBy];
+  if (!Array.isArray(descending)) descending = [descending];
+  return rows.slice().sort((a, b) => {
+    for (let i = 0; i < sortBy.length; i++) {
+      const col = sortBy[i];
+      const dir = descending[i] ?? false;
+      if (a[col] < b[col]) return dir ? 1 : -1;
+      if (a[col] > b[col]) return dir ? -1 : 1;
+    }
+    return 0;
+  });
+};
 // Estado del modal de edición
 const editDialog = ref(false);
 import { ref, onMounted, computed, watch } from 'vue';
