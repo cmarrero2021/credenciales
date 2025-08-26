@@ -1,5 +1,16 @@
 const routes = [
   {
+    path: "/credencial",
+    component: () => import("layouts/MainLayout.vue"),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: "",
+        component: () => import("pages/CredencialPage.vue"),
+      },
+    ],
+  },
+  {
     path: "/",
         component: () => import("pages/revistas_private/MantenedorPage.vue"),
         // component: () => import("pages/login/LoginPage.vue"),
