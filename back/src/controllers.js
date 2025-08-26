@@ -97,6 +97,42 @@ exports.listServers = async (req, res) => {
 };
 
 // Buscar servidor
+// Endpoint para credencial
+exports.getCredencial = async (req, res) => {
+    const { cedula } = req.params;
+    const client = await pool.connect();
+    const fs = require('fs');
+    const path = require('path');
+    try {
+        // Buscar datos del servidor y foto
+        const result = await client.query(`
+            SELECT s.cedula, s.nombres, s.apellidos, s.cargo_id, s.cargo, f.foto_url
+            FROM vservidores s
+            LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
+            WHERE s.cedula = $1
+        `, [cedula]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No encontrado.' });
+        }
+        const row = result.rows[0];
+        let foto_url = row.foto_url;
+        let final_url = '/img/no_person.png';
+        if (foto_url && fs.existsSync(foto_url)) {
+            final_url = `/uploads/${path.basename(foto_url)}`;
+        }
+        res.status(200).json({
+            cedula: row.cedula,
+            nombres: row.nombres,
+            apellidos: row.apellidos,
+            cargo: row.cargo,
+            foto_url: final_url
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Error al buscar la credencial.' });
+    } finally {
+        client.release();
+    }
+};
 exports.seekServer = async (req, res) => {
     const { cedula } = req.params;
     const client = await pool.connect();

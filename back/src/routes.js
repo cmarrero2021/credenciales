@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+    getCredencial,
     createServer,
     listServers,
     seekServer,
@@ -61,6 +62,8 @@ router.post('/force-logout', forceLogout); // Cierre forzoso de sesión
 // Rutas Protegidas
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
 
+// Endpoint para credencial
+router.get('/credencial/:cedula', getCredencial);
 // Upload foto usuario al crear servidor
 router.post('/servidor', upload.single('foto'), createServer); // Crear servidor con foto PNG
 router.post('/servidor', createServer); // Listar servidores

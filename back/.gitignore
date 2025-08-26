@@ -72,5 +72,7 @@ logs/
 # Ignorar archivos de caché
 .cache/
 src/hash.js
-,env
+.env
 src/ambiente.js
+bd/
+recursos/
