@@ -3,6 +3,7 @@
     <q-input v-model="cedula" label="Buscar por cédula" @keyup.enter="buscarTrabajador" class="q-mb-md" />
   <q-btn label="Buscar" color="primary" @click="buscarTrabajador" class="q-mb-lg" />
   <q-btn v-if="trabajador" label="Imprimir" color="secondary" @click="imprimirCredencial" class="q-mb-lg" />
+  <!-- <q-btn v-if="trabajador" label="Alternar menú" color="primary" @click="emitirToggleDrawer" class="q-mb-lg" /> -->
     <div v-if="trabajador" class="credencial-preview">
       <img :src="fondoUrl" class="fondo-img" alt="Fondo carnet" />
   <img :src="getFotoUrl(trabajador.foto_url)" class="foto-trabajador" alt="Foto trabajador" />
@@ -13,7 +14,11 @@
   </div>
 </template>
 <script setup>
+function emitirToggleDrawer() {
+  window.dispatchEvent(new CustomEvent('toggle-drawer'));
+}
 import { onMounted, onBeforeUnmount } from 'vue'
+import { inject } from 'vue'
 const imprimiendo = ref(false)
 
 function ocultarElementos() {
@@ -25,10 +30,32 @@ function restaurarElementos() {
   document.body.classList.remove('solo-credencial')
 }
 function imprimirCredencial() {
-  ocultarElementos()
+  // Colapsar el drawer usando el evento global
+  window.dispatchEvent(new CustomEvent('toggle-drawer'));
+  let originalPadding = '';
+  document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
+    element.style.display = 'none';
+  });
+  // Muestra la credencial
+  const credencial = document.querySelector('.credencial-preview');
+  if (credencial) credencial.style.display = 'block';
+  // Guardar y modificar el padding-left de q-page-container
+  const pageContainer = document.querySelector('.q-page-container');
+  if (pageContainer) {
+    originalPadding = pageContainer.style.paddingLeft;
+    pageContainer.style.paddingLeft = '0px';
+  }
   setTimeout(() => {
-    window.print()
-  }, 10000)
+    window.print();
+  // El drawer se colapsa solo con el evento, no se restaura manualmente
+    document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
+      element.style.display = '';
+    });
+    if (credencial) credencial.style.display = '';
+    if (pageContainer) {
+      pageContainer.style.paddingLeft = originalPadding;
+    }
+  }, 500);
 }
 onMounted(() => {
   window.addEventListener('afterprint', restaurarElementos)

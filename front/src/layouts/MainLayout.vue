@@ -40,6 +40,13 @@
 </template>
 
 <script setup>
+import { onMounted, onBeforeUnmount } from 'vue'
+onMounted(() => {
+  window.addEventListener('toggle-drawer', toggleLeftDrawer)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('toggle-drawer', toggleLeftDrawer)
+})
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { LocalStorage, Notify } from 'quasar'
