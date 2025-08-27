@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div  class="q-ml-xl q-mr-xl">
     <q-input v-model="cedula" label="Buscar por cédula" @keyup.enter="buscarTrabajador" class="q-mb-md" />
   <q-btn label="Buscar" color="primary" @click="buscarTrabajador" class="q-mb-lg" />
   <q-btn v-if="trabajador" label="Imprimir" color="secondary" @click="imprimirCredencial" class="q-mb-lg" />
@@ -30,8 +30,8 @@ function restaurarElementos() {
   document.body.classList.remove('solo-credencial')
 }
 function imprimirCredencial() {
-  // Colapsar el drawer usando el evento global
-  window.dispatchEvent(new CustomEvent('toggle-drawer'));
+  // Colapsar el drawer usando el evento global específico
+  window.dispatchEvent(new CustomEvent('collapse-drawer'));
   let originalPadding = '';
   document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
     element.style.display = 'none';
@@ -47,7 +47,6 @@ function imprimirCredencial() {
   }
   setTimeout(() => {
     window.print();
-  // El drawer se colapsa solo con el evento, no se restaura manualmente
     document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
       element.style.display = '';
     });

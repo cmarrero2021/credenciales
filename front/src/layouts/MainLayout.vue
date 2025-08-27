@@ -43,10 +43,18 @@
 import { onMounted, onBeforeUnmount } from 'vue'
 onMounted(() => {
   window.addEventListener('toggle-drawer', toggleLeftDrawer)
+  window.addEventListener('collapse-drawer', colapsarDrawer)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('toggle-drawer', toggleLeftDrawer)
+  window.removeEventListener('collapse-drawer', colapsarDrawer)
 })
+
+function colapsarDrawer() {
+  if (leftDrawerOpen.value) {
+    leftDrawerOpen.value = false;
+  }
+}
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { LocalStorage, Notify } from 'quasar'
