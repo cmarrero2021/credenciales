@@ -33,6 +33,19 @@ function imprimirCredencial() {
   // Colapsar el drawer usando el evento global específico
   window.dispatchEvent(new CustomEvent('collapse-drawer'));
   let originalPadding = '';
+  // Eliminar clases de margen del div principal
+  const mainDiv = document.querySelector('div.q-ml-xl.q-mr-xl');
+  let restoreMargin = false;
+  if (mainDiv) {
+    if (mainDiv.classList.contains('q-ml-xl')) {
+      mainDiv.classList.remove('q-ml-xl');
+      restoreMargin = true;
+    }
+    if (mainDiv.classList.contains('q-mr-xl')) {
+      mainDiv.classList.remove('q-mr-xl');
+      restoreMargin = true;
+    }
+  }
   document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
     element.style.display = 'none';
   });
@@ -53,6 +66,11 @@ function imprimirCredencial() {
     if (credencial) credencial.style.display = '';
     if (pageContainer) {
       pageContainer.style.paddingLeft = originalPadding;
+    }
+    // Restituir clases de margen
+    if (mainDiv && restoreMargin) {
+      mainDiv.classList.add('q-ml-xl');
+      mainDiv.classList.add('q-mr-xl');
     }
   }, 500);
 }
