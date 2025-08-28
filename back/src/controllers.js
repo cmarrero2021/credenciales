@@ -106,7 +106,7 @@ exports.getCredencial = async (req, res) => {
     try {
         // Buscar datos del servidor y foto
         const result = await client.query(`
-            SELECT s.cedula, s.nombres, s.apellidos, s.cargo_id, s.cargo, f.foto_url
+            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.cargo_id, s.cargo, f.foto_url
             FROM vservidores s
             LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
             WHERE s.cedula = $1
@@ -124,6 +124,8 @@ exports.getCredencial = async (req, res) => {
             cedula: row.cedula,
             nombres: row.nombres,
             apellidos: row.apellidos,
+            institucion: row.institucion,
+            area: row.area,
             cargo: row.cargo,
             foto_url: final_url
         });
