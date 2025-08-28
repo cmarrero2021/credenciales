@@ -105,6 +105,18 @@ const buscarTrabajador = async () => {
 }
 </script>
 <style scoped>
+@font-face {
+  font-family: 'Georama';
+  src: url('@/assets/fonts/georama/Georama-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Georama';
+  src: url('@/assets/fonts/georama/Georama-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
 .credencial-preview {
   width: 55mm;
   height: 85mm;
@@ -148,7 +160,8 @@ const buscarTrabajador = async () => {
   width: 55mm;
   text-align: center;
   font-size: 4mm;
-  font-weight: bold;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
   z-index: 2;
 }
 .cedula {
@@ -157,16 +170,20 @@ const buscarTrabajador = async () => {
   left: 0;
   width: 55mm;
   text-align: center;
-  font-size: 4mm;
+  font-size: 5.6mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
   z-index: 2;
 }
 .cargo {
   position: absolute;
-  top: 61mm;
+  top: 64.52mm;
   left: 0;
   width: 55mm;
   text-align: center;
-  font-size: 4mm;
+  font-size: 3.2mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 400;
   z-index: 2;
 }
 </style>
