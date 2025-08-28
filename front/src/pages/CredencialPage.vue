@@ -1,19 +1,30 @@
 <template>
-  <div  class="q-ml-xl q-mr-xl">
+  <div class="q-ml-xl q-mr-xl">
     <q-input v-model="cedula" label="Buscar por cédula" @keyup.enter="buscarTrabajador" class="q-mb-md" />
-  <q-btn label="Buscar" color="primary" @click="buscarTrabajador" class="q-mb-lg" />
-  <q-btn v-if="trabajador" label="Imprimir" color="secondary" @click="imprimirCredencial" class="q-mb-lg" />
-  <!-- <q-btn v-if="trabajador" label="Alternar menú" color="primary" @click="emitirToggleDrawer" class="q-mb-lg" /> -->
-    <div v-if="trabajador" class="credencial-preview">
-      <img :src="fondoUrl" class="fondo-img" alt="Fondo carnet" />
-  <img :src="getFotoUrl(trabajador.foto_url)" class="foto-trabajador" alt="Foto trabajador" />
-  <div class="nombre">{{ trabajador.nombres }} {{ trabajador.apellidos }}</div>
-  <div class="cargo">{{ trabajador.cargo }}</div>
-  <div class="cedula">{{ trabajador.cedula }}</div>
+    <q-btn label="Buscar" color="primary" @click="buscarTrabajador" class="q-mb-lg" />
+    <q-btn v-if="trabajador" label="Imprimir" color="secondary" @click="imprimirCredencial" class="q-mb-lg" />
+    <!-- <q-btn v-if="trabajador" label="Alternar menú" color="primary" @click="emitirToggleDrawer" class="q-mb-lg" /> -->
+    <div v-if="trabajador" class="credencial-container">
+      <div class="credencial-preview">
+        <img :src="fondoUrl" class="fondo-img" alt="Fondo carnet" />
+        <img :src="getFotoUrl(trabajador.foto_url)" class="foto-trabajador" alt="Foto trabajador" />
+        <div class="nombre">{{ trabajador.nombres }} {{ trabajador.apellidos }}</div>
+        <div class="cargo">{{ trabajador.cargo }}</div>
+        <div class="cedula">{{ trabajador.cedula }}</div>
+      </div>
+      <div v-if="mostrarInfo" class="info-servidor no-print">
+  <div><b>Cédula:</b> {{ trabajador.cedula }}</div>
+  <div><b>Nombres:</b> {{ trabajador.nombres }}</div>
+  <div><b>Apellidos:</b> {{ trabajador.apellidos }}</div>
+  <div><b>Institución:</b> {{ trabajador.institucion || trabajador.institucion }}</div>
+  <div><b>Unidad Adscripción:</b> {{ trabajador.area || trabajador.area }}</div>
+  <div><b>Cargo:</b> {{ trabajador.cargo }}</div>
+      </div>
     </div>
   </div>
 </template>
 <script setup>
+const mostrarInfo = ref(true)
 function emitirToggleDrawer() {
   window.dispatchEvent(new CustomEvent('toggle-drawer'));
 }
@@ -30,6 +41,7 @@ function restaurarElementos() {
   document.body.classList.remove('solo-credencial')
 }
 function imprimirCredencial() {
+  mostrarInfo.value = false;
   // Colapsar el drawer usando el evento global específico
   window.dispatchEvent(new CustomEvent('collapse-drawer'));
   let originalPadding = '';
@@ -72,6 +84,7 @@ function imprimirCredencial() {
       mainDiv.classList.add('q-ml-xl');
       mainDiv.classList.add('q-mr-xl');
     }
+  mostrarInfo.value = true;
   }, 500);
 }
 onMounted(() => {
@@ -118,6 +131,36 @@ const buscarTrabajador = async () => {
 }
 </script>
 <style scoped>
+.credencial-container {
+  display: flex;
+  flex-direction: row;
+  gap: 32px;
+  align-items: flex-start;
+}
+@media (max-width: 900px) {
+  .credencial-container {
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+  }
+}
+.info-servidor {
+  background: #f8f8f8;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  padding: 18px 24px;
+  min-width: 220px;
+  font-size: 1.1em;
+  max-width: 350px;
+}
+.no-print {
+  display: block;
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
 @font-face {
   font-family: 'Georama';
   src: url('@/assets/fonts/georama/Georama-Regular.ttf') format('truetype');
