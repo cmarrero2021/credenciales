@@ -90,6 +90,7 @@ function getFotoUrl(url) {
 }
 import { ref } from 'vue'
 import axios from 'axios'
+import { Notify } from 'quasar'
 const cedula = ref('')
 const trabajador = ref(null)
 const fondoUrl = '/img/frontal_carnet.png'
@@ -98,9 +99,21 @@ const buscarTrabajador = async () => {
   if (!cedula.value) return
   try {
     const res = await axios.get(`${apiBase}/auth/credencial/${cedula.value}`)
-    trabajador.value = res.data
+    if (!res.data || !res.data.cedula) {
+      trabajador.value = null;
+  Notify.create({ type: 'negative', message: 'El número de Cédula de Identidad introducido no corresponde con ningún trabajador registrado.', position: 'center' });
+      return;
+    }
+    // Verificar si la foto es la imagen por defecto
+    if (res.data.foto_url === '/img/no_person.png') {
+      trabajador.value = null;
+      Notify.create({ type: 'warning', message: 'No se puede imprimir la credencial porque no existe la foto del Servidor Público.', position: 'center' });
+      return;
+    }
+    trabajador.value = res.data;
   } catch (err) {
-    trabajador.value = null
+    trabajador.value = null;
+  Notify.create({ type: 'negative', message: 'El número de Cédula de Identidad introducido no corresponde con ningún trabajador registrado.', position: 'center' });
   }
 }
 </script>
