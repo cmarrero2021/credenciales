@@ -135,6 +135,72 @@ exports.getCredencial = async (req, res) => {
         client.release();
     }
 };
+
+// Guardar histórico de impresión de credencial
+exports.saveCredentialPrint = async (req, res) => {
+    const { cedula } = req.body;
+    const client = await pool.connect();
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+        // Buscar datos del servidor
+        const serverResult = await client.query(`
+            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.cargo, f.foto_url
+            FROM vservidores s
+            LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
+            WHERE s.cedula = $1
+        `, [cedula]);
+
+        if (serverResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Servidor no encontrado.' });
+        }
+
+        const servidor = serverResult.rows[0];
+        
+        // Leer la foto como bytea
+        let fotoBuffer = null;
+        if (servidor.foto_url && fs.existsSync(servidor.foto_url)) {
+            fotoBuffer = fs.readFileSync(servidor.foto_url);
+        } else {
+            // Si no hay foto, usar la imagen por defecto
+            const defaultFotoPath = path.join(__dirname, '../img/no_person.png');
+            if (fs.existsSync(defaultFotoPath)) {
+                fotoBuffer = fs.readFileSync(defaultFotoPath);
+            }
+        }
+
+        if (!fotoBuffer) {
+            return res.status(400).json({ error: 'No se pudo obtener la foto del servidor.' });
+        }
+
+        // Insertar en la tabla historico
+        await client.query(`
+            INSERT INTO historico (institucion, cedula, nombres, apellidos, unidad, cargo, foto, vigente, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+        `, [
+            servidor.institucion,
+            servidor.cedula,
+            servidor.nombres,
+            servidor.apellidos,
+            servidor.area,
+            servidor.cargo,
+            fotoBuffer
+        ]);
+
+        res.status(200).json({ 
+            message: 'Histórico de impresión guardado exitosamente.',
+            cedula: servidor.cedula,
+            nombres: servidor.nombres,
+            apellidos: servidor.apellidos
+        });
+    } catch (err) {
+        console.error('Error al guardar histórico de impresión:', err);
+        res.status(500).json({ error: 'Error al guardar el histórico de impresión.' });
+    } finally {
+        client.release();
+    }
+};
 exports.seekServer = async (req, res) => {
     const { cedula } = req.params;
     const client = await pool.connect();
