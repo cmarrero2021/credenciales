@@ -40,12 +40,24 @@ function restaurarElementos() {
   imprimiendo.value = false
   document.body.classList.remove('solo-credencial')
 }
-function imprimirCredencial() {
+async function imprimirCredencial() {
+  // Verificar si estamos en Electron
+  const isElectron = window.electronAPI && window.electronAPI.isElectron;
+
+  if (isElectron) {
+    // Modo Electron - Usar API nativa de impresión
+    await imprimirCredencialElectron();
+  } else {
+    // Modo Web - Usar window.print() tradicional
+    await imprimirCredencialWeb();
+  }
+}
+
+// Función para imprimir en Electron
+async function imprimirCredencialElectron() {
   mostrarInfo.value = false;
-  // Colapsar el drawer usando el evento global específico
   window.dispatchEvent(new CustomEvent('collapse-drawer'));
-  let originalPadding = '';
-  // Eliminar clases de margen del div principal
+
   const mainDiv = document.querySelector('div.q-ml-xl.q-mr-xl');
   let restoreMargin = false;
   if (mainDiv) {
@@ -58,20 +70,30 @@ function imprimirCredencial() {
       restoreMargin = true;
     }
   }
+
   document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
     element.style.display = 'none';
   });
-  // Muestra la credencial
+
   const credencial = document.querySelector('.credencial-preview');
   if (credencial) credencial.style.display = 'block';
-  // Guardar y modificar el padding-left de q-page-container
+
   const pageContainer = document.querySelector('.q-page-container');
+  let originalPadding = '';
   if (pageContainer) {
     originalPadding = pageContainer.style.paddingLeft;
     pageContainer.style.paddingLeft = '0px';
   }
-  setTimeout(() => {
-    window.print();
+
+  // Esperar un momento para que se apliquen los estilos
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  try {
+    // Llamar a la API de Electron para imprimir
+    // No necesitamos enviar datos, Electron imprimirá el contenido HTML actual
+    const result = await window.electronAPI.printCredential();
+
+    // Restaurar elementos
     document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
       element.style.display = '';
     });
@@ -79,12 +101,156 @@ function imprimirCredencial() {
     if (pageContainer) {
       pageContainer.style.paddingLeft = originalPadding;
     }
-    // Restituir clases de margen
     if (mainDiv && restoreMargin) {
       mainDiv.classList.add('q-ml-xl');
       mainDiv.classList.add('q-mr-xl');
     }
-  mostrarInfo.value = true;
+    mostrarInfo.value = true;
+
+    // Mostrar notificación según el resultado
+    if (result.success && result.printed) {
+      Notify.create({
+        type: 'positive',
+        message: 'Credencial impresa exitosamente',
+        position: 'top'
+      });
+      
+      // Guardar en el histórico de impresión
+      try {
+        await axios.post(`${apiBase}/auth/credencial/historico`, {
+          cedula: trabajador.value.cedula
+        });
+      } catch (error) {
+        console.error('Error al guardar histórico:', error);
+        // No mostramos error al usuario, solo lo registramos en consola
+      }
+    } else if (result.success && !result.printed) {
+      Notify.create({
+        type: 'negative',
+        message: 'Impresión cancelada',
+        position: 'top'
+      });
+    } else {
+      Notify.create({
+        type: 'negative',
+        message: 'Error al imprimir: ' + (result.error || 'Desconocido'),
+        position: 'top'
+      });
+    }
+  } catch (error) {
+    console.error('Error en impresión Electron:', error);
+    // Restaurar elementos en caso de error
+    document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
+      element.style.display = '';
+    });
+    if (credencial) credencial.style.display = '';
+    if (pageContainer) {
+      pageContainer.style.paddingLeft = originalPadding;
+    }
+    if (mainDiv && restoreMargin) {
+      mainDiv.classList.add('q-ml-xl');
+      mainDiv.classList.add('q-mr-xl');
+    }
+    mostrarInfo.value = true;
+
+    Notify.create({
+      type: 'negative',
+      message: 'Error al imprimir',
+      position: 'top'
+    });
+  }
+}
+
+// Función para imprimir en navegador web (mantiene la lógica anterior con matchMedia)
+function imprimirCredencialWeb() {
+  mostrarInfo.value = false;
+  window.dispatchEvent(new CustomEvent('collapse-drawer'));
+
+  let originalPadding = '';
+  const mainDiv = document.querySelector('div.q-ml-xl.q-mr-xl');
+  let restoreMargin = false;
+  if (mainDiv) {
+    if (mainDiv.classList.contains('q-ml-xl')) {
+      mainDiv.classList.remove('q-ml-xl');
+      restoreMargin = true;
+    }
+    if (mainDiv.classList.contains('q-mr-xl')) {
+      mainDiv.classList.remove('q-mr-xl');
+      restoreMargin = true;
+    }
+  }
+
+  document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
+    element.style.display = 'none';
+  });
+
+  const credencial = document.querySelector('.credencial-preview');
+  if (credencial) credencial.style.display = 'block';
+
+  const pageContainer = document.querySelector('.q-page-container');
+  if (pageContainer) {
+    originalPadding = pageContainer.style.paddingLeft;
+    pageContainer.style.paddingLeft = '0px';
+  }
+
+  // Variable para detectar si se imprimió
+  let seImprimio = false;
+
+  // Función para restaurar elementos
+  const restaurar = () => {
+    document.querySelectorAll('.q-header, .q-field, .q-btn').forEach(function(element) {
+      element.style.display = '';
+    });
+    if (credencial) credencial.style.display = '';
+    if (pageContainer) {
+      pageContainer.style.paddingLeft = originalPadding;
+    }
+    if (mainDiv && restoreMargin) {
+      mainDiv.classList.add('q-ml-xl');
+      mainDiv.classList.add('q-mr-xl');
+    }
+    mostrarInfo.value = true;
+  };
+
+  // Detectar si realmente se está imprimiendo usando matchMedia
+  const mediaQueryList = window.matchMedia('print');
+  const handlePrintChange = (mql) => {
+    if (mql.matches) {
+      seImprimio = true;
+    }
+  };
+
+  mediaQueryList.addListener(handlePrintChange);
+
+  // Listener para afterprint
+  const handleAfterPrint = () => {
+    restaurar();
+
+    // Mostrar notificación según si se imprimió o se canceló (lógica invertida)
+    if (!seImprimio) {
+      Notify.create({
+        type: 'positive',
+        message: 'Credencial impresa exitosamente',
+        position: 'top'
+      });
+      // Aquí se guardará la data en la tabla en el futuro
+    } else {
+      Notify.create({
+        type: 'negative',
+        message: 'Impresión cancelada',
+        position: 'top'
+      });
+    }
+
+    // Limpiar listeners
+    window.removeEventListener('afterprint', handleAfterPrint);
+    mediaQueryList.removeListener(handlePrintChange);
+  };
+
+  window.addEventListener('afterprint', handleAfterPrint);
+
+  setTimeout(() => {
+    window.print();
   }, 500);
 }
 onMounted(() => {

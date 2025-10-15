@@ -1,6 +1,7 @@
 const express = require('express');
 const {
     getCredencial,
+    saveCredentialPrint,
     createServer,
     listServers,
     seekServer,
@@ -59,11 +60,13 @@ router.get('/prueba', prueba);
 router.post('/login', login); // Inicio de sesión
 router.post('/verify-email', verifyEmail); // Verificación de correo electrónico
 router.post('/force-logout', forceLogout); // Cierre forzoso de sesión
+
+// Endpoint para credencial (público)
+router.get('/credencial/:cedula', getCredencial);
+router.post('/credencial/historico', saveCredentialPrint);
+
 // Rutas Protegidas
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
-
-// Endpoint para credencial
-router.get('/credencial/:cedula', getCredencial);
 // Upload foto usuario al crear servidor
 router.post('/servidor', upload.single('foto'), createServer); // Crear servidor con foto PNG
 router.post('/servidor', createServer); // Listar servidores
