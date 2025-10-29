@@ -1,23 +1,14 @@
 <template>
   <div class="q-pa-md">
-      <div class="image-container">
-        <img class="responsive-image" src="/img/logo_nobg1.png" alt="Electoral MINAAMP - INASS" />
-      </div>
+    <div class="image-container">
+      <img class="responsive-image" src="/img/logo_nobg1.png" alt="Electoral MINAAMP - INASS" />
+    </div>
 
     <h4 class="q-mb-md">SERVIDORES</h4>
 
-    <q-table
-      title="Lista de Servidores"
-      :rows="filteredServers"
-      :columns="isQuickEditMode ? quickEditColumns : columns"
-      :rows-per-page-options="[10, 20, 50]"
-      row-key="id"
-      :pagination="pagination"
-      :loading="loading"
-      virtual-scroll
-      class="responsive-table"
-      :class="{ 'editing-mode': isQuickEditMode }"
-    >
+    <q-table title="Lista de Servidores" :rows="filteredServers" :columns="isQuickEditMode ? quickEditColumns : columns"
+      :rows-per-page-options="[10, 20, 50]" row-key="id" :pagination="pagination" :loading="loading" virtual-scroll
+      class="responsive-table" :class="{ 'editing-mode': isQuickEditMode }">
       <!-- Búsqueda general y botón borrar filtros -->
       <template v-slot:top>
         <!-- Primera fila: Búsqueda general y botón borrar filtros -->
@@ -90,7 +81,8 @@
       <!-- Columna de foto -->
       <template v-slot:body-cell-foto="props">
         <q-td :props="props">
-          <img :src="getFotoUrl(props.row.foto_url)" alt="Foto" style="width:48px;height:48px;object-fit:cover;border-radius:50%;border:1px solid #ccc;" />
+          <img :src="getFotoUrl(props.row.foto_url)" alt="Foto"
+            style="width:48px;height:48px;object-fit:cover;border-radius:50%;border:1px solid #ccc;" />
         </q-td>
       </template>
 
@@ -107,8 +99,8 @@
               class="q-mr-xs" @click.stop="startQuickEdit(props.row)" v-if="hasPermission('view_admin')"/> -->
 
             <!-- Botón Borrar -->
-            <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor" size="xs"
-              class="q-mr-xs" v-if="hasPermission('view_admin')" />
+            <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor"
+              size="xs" class="q-mr-xs" v-if="hasPermission('view_admin')" />
           </div>
         </q-td>
       </template>
@@ -117,13 +109,8 @@
       <template v-slot:body-cell-hora_voto="props">
         <q-td :props="props" :class="{ 'editing-cell': isQuickEditMode && props.row === editingRow }">
           <div v-if="isQuickEditMode && props.row === editingRow">
-            <q-input
-              v-model="editingRowData.hora_voto"
-              type="time"
-              dense
-              outlined
-              @update:model-value="handleTimeChange(props.row)"
-            />
+            <q-input v-model="editingRowData.hora_voto" type="time" dense outlined
+              @update:model-value="handleTimeChange(props.row)" />
           </div>
           <div v-else>
             {{ props.value }}
@@ -135,13 +122,8 @@
       <template v-slot:body-cell-observaciones="props">
         <q-td :props="props" :class="{ 'editing-cell': isQuickEditMode && props.row === editingRow }">
           <div v-if="isQuickEditMode && props.row === editingRow">
-            <q-input
-              v-model="editingRowData.observaciones"
-              type="text"
-              dense
-              outlined
-              @update:model-value="val => editingRowData.observaciones = val.toUpperCase()"
-            />
+            <q-input v-model="editingRowData.observaciones" type="text" dense outlined
+              @update:model-value="val => editingRowData.observaciones = val.toUpperCase()" />
           </div>
           <div v-else>
             {{ props.value }}
@@ -153,19 +135,8 @@
       <template v-slot:body-cell-controles="props">
         <q-td v-if="isQuickEditMode && props.row === editingRow">
           <div class="row items-center justify-end">
-            <q-btn
-              icon="check"
-              color="positive"
-              size="sm"
-              @click.stop="saveQuickEdit(props.row)"
-              class="q-mr-xs"
-            />
-            <q-btn
-              icon="close"
-              color="negative"
-              size="sm"
-              @click.stop="cancelQuickEdit"
-            />
+            <q-btn icon="check" color="positive" size="sm" @click.stop="saveQuickEdit(props.row)" class="q-mr-xs" />
+            <q-btn icon="close" color="negative" size="sm" @click.stop="cancelQuickEdit" />
           </div>
         </q-td>
         <q-td v-else></q-td>
@@ -214,33 +185,23 @@
                   option-value="value" />
               </div>
               <div class="col-12 col-md-6">
-                <q-select v-model="editForm.area" :options="optionsu.area" label="Adscripción" filled option-label="label"
-                  option-value="value" />
-              </div>
-              <div class="col-12 col-md-6">
-                <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled
+                <q-select v-model="editForm.area" :options="optionsu.area" label="Adscripción" filled
                   option-label="label" option-value="value" />
               </div>
-                <!-- Campo para subir foto PNG y previsualización -->
-                <div class="col-12">
-                  <q-file
-                    v-model="editForm.foto"
-                    label="Foto PNG del usuario"
-                    filled
-                    accept="image/png"
-                    :clearable="true"
-                    @rejected="onFileRejected"
-                    @update:model-value="onFotoChange"
-                  />
-                  <div class="q-mt-md">
-                    <div class="text-caption">Vista previa de la foto:</div>
-                    <img
-                      :src="fotoPreview || getFotoUrl(editForm.foto_url)"
-                      alt="Vista previa"
-                      style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;"
-                    />
-                  </div>
+              <div class="col-12 col-md-6">
+                <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled option-label="label"
+                  option-value="value" />
+              </div>
+              <!-- Campo para subir foto PNG y previsualización -->
+              <div class="col-12">
+                <q-file v-model="editForm.foto" label="Foto PNG del usuario" filled accept="image/png" :clearable="true"
+                  @rejected="onFileRejected" @update:model-value="onFotoChange" />
+                <div class="q-mt-md">
+                  <div class="text-caption">Vista previa de la foto:</div>
+                  <img :src="fotoPreview || getFotoUrl(editForm.foto_url)" alt="Vista previa"
+                    style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;" />
                 </div>
+              </div>
               <!-- <div class="col-12">
                 <q-input :model-value="editForm.observaciones"
                   @update:model-value="val => editForm.observaciones = val.toUpperCase()" label="Observaciones"
@@ -249,7 +210,8 @@
             </div>
             <div class="row justify-end">
               <q-btn icon="cancel" color="negative" type="reset" @click="closeEditModal" />
-              <q-btn icon="save" color="primary" type="submit" class="q-ml-sm" :disable="!editForm.foto && !editForm.foto_url" />
+              <q-btn icon="save" color="primary" type="submit" class="q-ml-sm"
+                :disable="!editForm.foto && !editForm.foto_url" />
             </div>
           </q-form>
         </q-card-section>
@@ -329,13 +291,13 @@ const getFotoUrl = (foto_url) => {
 };
 
 // Columnas para el modo edición rápida
-const quickEditColumns = [
-  { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, align: 'left' },
-  { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, align: 'left' },
-  { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, align: 'left' },
-  // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
-  { name: 'controles', label: 'Controles', align: 'right' }
-];
+// const quickEditColumns = [
+//   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, align: 'left' },
+//   { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, align: 'left' },
+//   { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, align: 'left' },
+//   // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
+//   { name: 'controles', label: 'Controles', align: 'right' }
+// ];
 
 // URLs de los endpoints
 const apiURL = import.meta.env.VITE_API_URL;
@@ -410,21 +372,21 @@ const openEditModal = (row) => {
   fotoPreview.value = row.foto_url ? getFotoUrl(row.foto_url) : null;
   editDialog.value = true;
 };
-  // Función para cerrar el modal de edición y limpiar el formulario
-  const closeEditModal = () => {
-    editDialog.value = false;
-    isEditing.value = false;
-    editForm.value = {};
-    fotoPreview.value = null;
-  };
+// Función para cerrar el modal de edición y limpiar el formulario
+const closeEditModal = () => {
+  editDialog.value = false;
+  isEditing.value = false;
+  editForm.value = {};
+  fotoPreview.value = null;
+};
 
-  // Función para abrir el modal para agregar un nuevo servidor
-  const openNewModal = () => {
-    isEditing.value = false;
-    editForm.value = {};
-    fotoPreview.value = null;
-    editDialog.value = true;
-  };
+// Función para abrir el modal para agregar un nuevo servidor
+const openNewModal = () => {
+  isEditing.value = false;
+  editForm.value = {};
+  fotoPreview.value = null;
+  editDialog.value = true;
+};
 
 // Estado para el modo edición rápida
 const isQuickEditMode = ref(false);
@@ -437,6 +399,7 @@ const fetchServers = async () => {
   try {
     const response = await axios.get(servidoresURL);
     servers.value = response.data;
+    console.log("servers:", servers.value)
   } catch (error) {
     console.error('Error al obtener las revistas:', error);
   } finally {
@@ -552,6 +515,7 @@ const filteredServers = computed(() => {
   });
 });
 /////////////////////////
+
 // Función para guardar cambios (debe ser async y única)
 const saveChanges = async () => {
   try {
@@ -572,7 +536,9 @@ const saveChanges = async () => {
     formData.append('cedula', editForm.value.cedula);
     formData.append('nombres', editForm.value.nombres?.toUpperCase() ?? '');
     formData.append('apellidos', editForm.value.apellidos?.toUpperCase() ?? '');
-    formData.append('observaciones', editForm.value.observaciones?.toUpperCase() ?? '');
+
+
+
     if (editForm.value.foto) {
       formData.append('foto', editForm.value.foto);
     }
@@ -744,6 +710,7 @@ onMounted(async () => {
 .q-table__container.editing-mode {
   border: 1px solid #4caf50;
 }
+
 /* Estilos para el slider de filtrado */
 .q-slider__track-container {
   height: 8px;
@@ -764,6 +731,7 @@ onMounted(async () => {
 .q-slider--dark .q-slider__selection {
   background: #0d47a1;
 }
+
 .image-container {
   width: 100%;
   max-width: 666px;
