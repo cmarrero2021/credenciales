@@ -74,7 +74,7 @@ router.get('/servidores', listServers); // Listar servidores
 router.get('/buscar_servidor/:cedula', seekServer);
 router.patch('/eliminar_servidor/:cedula', deleteServer);
 router.delete('/eliminar_servidor/:cedula', deleteServer);
-router.patch('/actualizar_servidor/:cedula', updateServer);
+router.patch('/actualizar_servidor/:cedula', upload.single('foto'), updateServer);
 router.post('/actualizar_masiva_servidor', massUpdateServer);
 router.get('/servidores_estadisticas', serverStatistics);
 router.get('/adultos_horas', elderHour);

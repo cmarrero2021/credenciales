@@ -5,13 +5,41 @@
     <q-btn v-if="trabajador" label="Imprimir" color="secondary" @click="imprimirCredencial" class="q-mb-lg" />
     <!-- <q-btn v-if="trabajador" label="Alternar menú" color="primary" @click="emitirToggleDrawer" class="q-mb-lg" /> -->
     <div v-if="trabajador" class="credencial-container">
-      <div class="credencial-preview">
+      <!-- Parte delantera -->
+      <div class="credencial-preview credencial-frontal">
         <img :src="fondoUrl" class="fondo-img" alt="Fondo carnet" />
         <img :src="getFotoUrl(trabajador.foto_url)" class="foto-trabajador" alt="Foto trabajador" />
         <div class="nombre">{{ trabajador.nombres }} {{ trabajador.apellidos }}</div>
         <div class="cargo">{{ trabajador.cargo }}</div>
         <div class="cedula">{{ trabajador.cedula }}</div>
       </div>
+      
+      <!-- Parte trasera -->
+      <div class="credencial-preview credencial-trasera">
+        <div class="contenido-trasero">
+          <div class="texto-trasero">
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria
+            </p>
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> Debe ser utilizado en un lugar visible
+            </p>
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> Puede ser retenido por la Dirección General de Seguridad cuando lo requiera
+            </p>
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> Es intransferible
+            </p>
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> Se agradece a todas las autoridades Civiles y Militares prestarle la mayor colaboración posible al portador de esta credencial, dentro de las normas legales
+            </p>
+            <p class="parrafo-trasero">
+              <span class="bullet">•</span> En caso de ser transferido a otra dirección o en caso de vencimiento, debe ser entregado
+            </p>
+          </div>
+        </div>
+      </div>
+      
       <div v-if="mostrarInfo" class="info-servidor no-print">
   <div><b>Cédula:</b> {{ trabajador.cedula }}</div>
   <div><b>Nombres:</b> {{ trabajador.nombres }}</div>
@@ -127,7 +155,7 @@ async function imprimirCredencialElectron() {
     } else if (result.success && !result.printed) {
       Notify.create({
         type: 'negative',
-        message: 'Impresión cancelada',
+        message: 'Impresión cancelada por el usuario',
         position: 'top'
       });
     } else {
@@ -407,5 +435,63 @@ const buscarTrabajador = async () => {
   font-family: 'Georama', sans-serif;
   font-weight: 400;
   z-index: 2;
+}
+
+/* Estilos para la parte trasera de la credencial */
+.credencial-trasera {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.contenido-trasero {
+  width: 100%;
+  height: 100%;
+  padding: 5mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.texto-trasero {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+}
+
+.parrafo-trasero {
+  margin: 0;
+  padding: 0 2mm;
+  font-family: 'Georama', sans-serif;
+  font-size: 2.5mm;
+  line-height: 1.4;
+  color: #2c3e50;
+  text-align: justify;
+  display: flex;
+  align-items: flex-start;
+}
+
+.bullet {
+  font-weight: 700;
+  margin-right: 1.5mm;
+  flex-shrink: 0;
+  color: #34495e;
+}
+
+/* Ajustes para impresión */
+@media print {
+  .credencial-frontal {
+    page-break-after: always;
+  }
+  
+  .credencial-trasera {
+    page-break-before: always;
+  }
+  
+  /* Asegurar que ambas credenciales se impriman */
+  .credencial-preview {
+    display: block !important;
+    visibility: visible !important;
+  }
 }
 </style>

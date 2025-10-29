@@ -18,6 +18,12 @@ exports.createServer = async (req, res) => {
     const client = await pool.connect();
     const fs = require('fs');
     let fotoPath = req.file && req.file.path ? req.file.path : null;
+    
+    console.log('=== CREATE SERVER DEBUG ===');
+    console.log('Body:', req.body);
+    console.log('File:', req.file);
+    console.log('FotoPath:', fotoPath);
+    
     try {
         const server = await client.query('SELECT cedula FROM servidores WHERE cedula = $1', [cedula]);
         if (server.rowCount > 0) {
@@ -27,28 +33,47 @@ exports.createServer = async (req, res) => {
             }
             return res.status(409).json({ error: 'La cédula del servidor ya está registrada.' });
         }
+        
         // Insertar servidor
-        await client.query(
-            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id) VALUES ($4, $5, $6, $2, $3, $1, $7)',
+        const insertResult = await client.query(
+            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id) VALUES ($4, $5, $6, $2, $3, $1, $7) RETURNING id',
             [area_id, institucion_id, sede_id, cedula, nombres, apellidos, cargo_id]
         );
+        
+        console.log('Servidor insertado con ID:', insertResult.rows[0]?.id);
+        
         // Si hay archivo de foto
         if (fotoPath) {
+            console.log('Procesando foto...');
             // Buscar el usuario_id por la cédula
             const userRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+            console.log('Usuario encontrado:', userRes.rows);
+            
             if (userRes.rows.length > 0) {
                 const usuario_id = userRes.rows[0].id;
                 const foto_url = fotoPath.replace(/\\/g, '/');
-                await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
+                console.log('Insertando foto - usuario_id:', usuario_id, 'foto_url:', foto_url);
+                
+                const fotoInsert = await client.query(
+                    'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2) RETURNING id',
+                    [usuario_id, foto_url]
+                );
+                console.log('Foto insertada con ID:', fotoInsert.rows[0]?.id);
+            } else {
+                console.log('ERROR: No se encontró el usuario recién creado');
             }
+        } else {
+            console.log('No hay foto para procesar');
         }
+        
         res.status(200).json({ message: 'Servidor creado exitosamente.' });
     } catch (err) {
+        console.error('ERROR en createServer:', err);
         // Eliminar foto si fue subida y ocurre cualquier error
         if (fotoPath) {
             try { fs.unlinkSync(fotoPath); } catch (e) {}
         }
-        res.status(500).json({ error: 'Error al crear el servidor.' });
+        res.status(500).json({ error: 'Error al crear el servidor.', details: err.message });
     } finally {
         client.release();
     }
@@ -220,18 +245,28 @@ exports.seekServer = async (req, res) => {
     }
 };
 exports.updateServer = async (req, res) => {
+    console.log('cuerpo: ',req.body);
     const { cedula } = req.params;
     const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id } = req.body;
     const client = await pool.connect();
     const fs = require('fs');
     let fotoPath = req.file && req.file.path ? req.file.path : null;
-    try {
+    
+    console.log('=== UPDATE SERVER DEBUG ===');
+    console.log('Cedula:', cedula);
+    console.log('Body:', req.body);
+    console.log('File:', req.file);
+    console.log('FotoPath:', fotoPath);
+    
+    // try {
         // Verificar que la cédula existe
         const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
         if (existsRes.rows.length === 0) {
             if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) {} }
             return res.status(404).json({ error: 'La cédula no existe.' });
         }
+        
+        console.log('Usuario ID encontrado:', existsRes.rows[0].id);
 
         const updates = [];
         const values = [];
@@ -262,26 +297,22 @@ exports.updateServer = async (req, res) => {
         }
 
         if (updates.length === 0 && !fotoPath) {
+            console.log('ERROR: No hay campos para actualizar');
             return res.status(400).json({ error: 'No hay campos para actualizar.' });
         }
-
+console.log("values: ",values)
+console.log("updates: ",updates.join(', '))
         // Actualizar datos del servidor si hay campos
         if (updates.length > 0) {
-            values.push(cedula); // Añadir la cedula al final de los valores
-            const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length}`;
-            // console.log('UPDATE QUERY:', query);
-            // console.log('UPDATE VALUES:', values);
-            // // Construir consulta con valores sustituidos para pgAdmin
-            // let queryForPgAdmin = query;
-            // values.forEach((val, idx) => {
-            //     let v = val;
-            //     if (typeof v === 'string') {
-            //         v = `'${v.replace(/'/g, "''")}'`;
-            //     }
-            //     queryForPgAdmin = queryForPgAdmin.replace(`$${idx+1}`, v);
-            // });
-            // console.log('QUERY PARA PGADMIN:', queryForPgAdmin);
+            values.push(cedula);
+            const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = ${cedula}`;
+            // const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = ${values.length}`;
+            console.log('Generated query:', query);
+            console.log('Query values:', values);
+            
             const updateRes = await client.query(query, values);
+            console.log('Filas actualizadas:', updateRes.rowCount);
+            
             if (updateRes.rowCount === 0) {
                 if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) {} }
                 return res.status(400).json({ error: 'No se actualizó ningún registro.' });
@@ -290,31 +321,47 @@ exports.updateServer = async (req, res) => {
 
         // Actualizar foto si se envía
         if (fotoPath) {
+            console.log('Procesando actualización de foto...');
             const usuario_id = existsRes.rows[0].id;
             const foto_url = fotoPath.replace(/\\/g, '/');
+            console.log('usuario_id:', usuario_id);
+            console.log('foto_url:', foto_url);
+            
             // Eliminar foto anterior si existe
             const oldFotoRes = await client.query('SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
+            console.log('Foto anterior encontrada:', oldFotoRes.rows);
+            
             if (oldFotoRes.rows.length > 0) {
                 const oldFoto = oldFotoRes.rows[0].foto_url;
                 if (oldFoto && fs.existsSync(oldFoto)) {
-                    try { fs.unlinkSync(oldFoto); } catch (e) {}
+                    try { 
+                        fs.unlinkSync(oldFoto);
+                        console.log('Foto anterior eliminada:', oldFoto);
+                    } catch (e) {
+                        console.log('Error al eliminar foto anterior:', e);
+                    }
                 }
-                await client.query('UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2', [foto_url, usuario_id]);
+                const updateFotoRes = await client.query('UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2', [foto_url, usuario_id]);
+                console.log('Foto actualizada, filas afectadas:', updateFotoRes.rowCount);
             } else {
-                await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
+                const insertFotoRes = await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2) RETURNING id', [usuario_id, foto_url]);
+                console.log('Foto insertada con ID:', insertFotoRes.rows[0]?.id);
             }
+        } else {
+            console.log('No hay foto para actualizar');
         }
+        
         res.status(200).json({ message: 'Servidor actualizado exitosamente.' });
-    } catch (err) {
-        // Eliminar foto si ocurre error
-        if (fotoPath) {
-            try { fs.unlinkSync(fotoPath); } catch (e) {}
-        }
-        console.error(err);
-        res.status(500).json({ error: 'Error al actualizar el servidor.' });
-    } finally {
+    // } catch (err) {
+    //     console.error('ERROR en updateServer:', err);
+    //     // Eliminar foto si ocurre error
+    //     if (fotoPath) {
+    //         try { fs.unlinkSync(fotoPath); } catch (e) {}
+    //     }
+    //     res.status(500).json({ error: 'Error al actualizar el servidor.', details: err.message });
+    // } finally {
         client.release();
-    }
+    // }
 };
 // Actualización masiva de la hora del voto de los servidores
 
