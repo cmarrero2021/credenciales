@@ -28,6 +28,7 @@
     "minaamp-electoral": "file:",
     "pdf-lib": "^1.17.1",
     "pdfmake": "^0.2.18",
+    "qrcode.vue": "^3.6.0",
     "quasar": "^2.16.0",
     "socket.io-client": "^4.8.1",
     "vue": "^3.4.18",
