@@ -12,8 +12,9 @@
         <div class="nombre">{{ trabajador.nombres }} {{ trabajador.apellidos }}</div>
         <div class="cargo">{{ trabajador.cargo }}</div>
         <div class="cedula">{{ trabajador.cedula }}</div>
+        <div :class="'franja' + trabajador.nivel">{{ trabajador.abreviacion }}</div>
       </div>
-      
+
       <!-- Parte trasera -->
       <div class="credencial-preview credencial-trasera">
         <div class="contenido-trasero">
@@ -43,7 +44,7 @@
           </div>
         </div>
       </div>
-      
+
       <div v-if="mostrarInfo" class="info-servidor no-print">
   <div><b>Cédula:</b> {{ trabajador.cedula }}</div>
   <div><b>Nombres:</b> {{ trabajador.nombres }}</div>
@@ -146,7 +147,7 @@ async function imprimirCredencialElectron() {
         message: 'Credencial impresa exitosamente',
         position: 'top'
       });
-      
+
       // Guardar en el histórico de impresión
       try {
         await axios.post(`${apiBase}/auth/credencial/historico`, {
@@ -334,6 +335,7 @@ const buscarTrabajador = async () => {
       return;
     }
     trabajador.value = res.data;
+
   } catch (err) {
     trabajador.value = null;
   Notify.create({ type: 'negative', message: 'El número de Cédula de Identidad introducido no corresponde con ningún trabajador registrado.', position: 'center' });
@@ -415,7 +417,8 @@ const buscarTrabajador = async () => {
   /*left: 19mm;*/
   left: 18mm;
   /*top: 28mm;*/
-  top: 23mm;
+  top: 20mm;
+  /* top: 23mm; */
   object-fit: cover;
   z-index: 2;
   border-radius: 3mm;
@@ -423,7 +426,8 @@ const buscarTrabajador = async () => {
 }
 .nombre {
   position: absolute;
-  top: 43mm;
+  top: 40mm;
+  /* top: 43mm; */
   left: 0;
   width: 55mm;
   text-align: center;
@@ -434,7 +438,8 @@ const buscarTrabajador = async () => {
 }
 .cedula {
   position: absolute;
-  top: 60mm;
+  top: 44mm;
+  /* top: 60mm; */
   left: 0;
   width: 55mm;
   text-align: center;
@@ -443,9 +448,49 @@ const buscarTrabajador = async () => {
   font-weight: 700;
   z-index: 2;
 }
+.franja1 {
+  position: absolute;
+  top: 59mm;
+    background-color: yellow;
+    color:rgba(0,0,0,1);
+    left: 0;
+  width: 55mm;
+  text-align: center;
+  font-size: 5.6mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
+  z-index: 3;
+}
+.franja2 {
+  position: absolute;
+  top: 59mm;
+  color:#f8f8f8;
+  background-color: rgb(99, 146, 248);
+  left: 0;
+  width: 55mm;
+  text-align: center;
+  font-size: 5.6mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
+  z-index: 3;
+}
+.franja3 {
+  position: absolute;
+  top: 59mm;
+  color:#f8f8f8;
+  background-color: rgb(248, 99, 99);
+  left: 0;
+  width: 55mm;
+  text-align: center;
+  font-size: 5.6mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
+  z-index: 3;
+}
 .cargo {
   position: absolute;
-  top: 55mm;
+  top: 52mm;
+  /* top: 55mm; */
   /*top: 64.52mm;*/
   left: 0;
   width: 55mm;
@@ -509,8 +554,10 @@ const buscarTrabajador = async () => {
 }
 
 .sello-img {
-  width: 75px;
-  height: 75px;
+  width: 100px;
+  height: 100px;
+  /* width: 75px;
+  height: 75px; */
   object-fit: contain;
 }
 
@@ -526,11 +573,11 @@ const buscarTrabajador = async () => {
   .credencial-frontal {
     page-break-after: always;
   }
-  
+
   .credencial-trasera {
     page-break-before: always;
   }
-  
+
   /* Asegurar que ambas credenciales se impriman */
   .credencial-preview {
     display: block !important;
