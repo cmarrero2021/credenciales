@@ -131,7 +131,7 @@ exports.getCredencial = async (req, res) => {
     try {
         // Buscar datos del servidor y foto
         const result = await client.query(`
-            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.cargo_id, s.cargo, f.foto_url
+            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.abreviacion, s.cargo_id, s.cargo, s.nivel, f.foto_url
             FROM vservidores s
             LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
             WHERE s.cedula = $1
@@ -151,7 +151,9 @@ exports.getCredencial = async (req, res) => {
             apellidos: row.apellidos,
             institucion: row.institucion,
             area: row.area,
+            abreviacion:row.abreviacion,
             cargo: row.cargo,
+            nivel: row.nivel,
             foto_url: final_url
         });
     } catch (err) {
@@ -795,7 +797,7 @@ exports.serverStatistics = async (req, res) => {
         // Consultar todas las vistas en paralelo para mejor rendimiento
         const [movilizacion, servidores, horas, total,instituciones,sedes,areas] = await Promise.all([
             client.query('SELECT id,franja_horaria,institucion_id,institucion,sede_id,sede,area_id,area,cedula,nombres,hora_voto,observaciones from vmovilizacion_servidores '),
-            client.query('SELECT id,institucion_id,institucion,sede_id,sede,area_id,area,cedula,nombres,hora_voto,observaciones from vservidores'),
+            client.query('SELECT id,institucion_id,institucion,sede_id,sede,area_id,area,abreviacion,cedula,nombres,hora_voto,observaciones from vservidores'),
             client.query('SELECT franja_horaria, cantidad, acumulado FROM vmovilizacion_servidores_horas'),
             client.query('SELECT movilizados,por_movilizar,total_registros FROM vtotal_servidores'),
             client.query('SELECT institucion_id,institucion,movilizados,total_registros FROM vmovilizacion_servidores_institucion'),
