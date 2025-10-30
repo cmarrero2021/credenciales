@@ -543,7 +543,9 @@ const saveChanges = async () => {
       formData.append('foto', editForm.value.foto);
     }
     if (isEditing.value) {
-      await axios.patch(`${updateServerURL}${editForm.value.cedula}`, Object.fromEntries(formData));
+      await axios.patch(`${updateServerURL}${editForm.value.cedula}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       Notify.create({
         type: 'positive',
         message: 'Los cambios se han guardado correctamente.'

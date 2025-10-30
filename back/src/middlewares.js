@@ -16,29 +16,32 @@ exports.authenticate = async (req, res, next) => {
         // Decodificar el token JWT
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.userId = decoded.userId;
-////////////////////////
-const sessionResult = await pool.query(
-    'SELECT expires_at FROM sessions WHERE token = $1 AND is_revoked = FALSE', 
-    [token]
-  );
-  
-  if (!sessionResult.rows.length) {
-    return res.status(401).json({ error: 'Sesión no encontrada o revocada.' });
-  }
-  
-  const expiresAt = sessionResult.rows[0].expires_at;
-  if (new Date(expiresAt) < new Date()) {
-    return res.status(401).json({ error: 'Sesión expirada. Por favor, inicia sesión nuevamente.' });
-  }
-////////////////////////
+
+        // Validar la sesión activa
+        const sessionResult = await pool.query(
+            'SELECT expires_at FROM sessions WHERE token = $1 AND is_revoked = FALSE', 
+            [token]
+        );
+        
+        if (!sessionResult.rows.length) {
+            return res.status(401).json({ error: 'Sesión no encontrada o revocada.' });
+        }
+        
+        const expiresAt = sessionResult.rows[0].expires_at;
+        if (new Date(expiresAt) < new Date()) {
+            return res.status(401).json({ error: 'Sesión expirada. Por favor, inicia sesión nuevamente.' });
+        }
+
         next();
     } catch (err) {
         if (err.name === 'TokenExpiredError') {
             // Registrar el vencimiento de la sesión en la auditoría
-            await pool.query(
-                'UPDATE login_logs SET logout_type = $1, logout_timestamp = NOW() WHERE session_token = $2',
-                ['expired', token]
-            );
+            try {
+                await pool.query(
+                    'UPDATE login_logs SET logout_type = $1, logout_timestamp = NOW() WHERE session_token = $2',
+                    ['expired', token]
+                );
+            } catch (_) { /* noop */ }
             return res.status(401).json({ error: 'La sesión ha expirado. Por favor, inicia sesión nuevamente.' });
         }
         res.status(400).json({ error: 'Token inválido.' });

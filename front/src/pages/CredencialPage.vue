@@ -37,6 +37,10 @@
               <span class="bullet">•</span> En caso de ser transferido a otra dirección o en caso de vencimiento, debe ser entregado
             </p>
           </div>
+          <div class="footer-container">
+            <img src="/img/sello.png" alt="Sello" class="sello-img" />
+            <QrcodeVue :value="qrUrl" :size="qrSize" level="H" class="qr-code" />
+          </div>
         </div>
       </div>
       
@@ -295,13 +299,25 @@ function getFotoUrl(url) {
   }
   return url
 }
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import axios from 'axios'
 import { Notify } from 'quasar'
+import QrcodeVue from 'qrcode.vue'
+
 const cedula = ref('')
 const trabajador = ref(null)
 const fondoUrl = '/img/frontal_carnet.png'
 const apiBase = import.meta.env.VITE_API_URL || ''
+const qrBaseUrl = import.meta.env.VITE_CREDENCIAL_QR_URL || 'https://intranet.minaamp.gob.ve/credenciales/cedula='
+
+// Tamaño del QR en píxeles (aproximadamente 20mm para mejor escaneo)
+const qrSize = 75
+
+// URL completa del QR con la cédula del trabajador
+const qrUrl = computed(() => {
+  if (!trabajador.value || !trabajador.value.cedula) return ''
+  return `${qrBaseUrl}${trabajador.value.cedula}`
+})
 const buscarTrabajador = async () => {
   if (!cedula.value) return
   try {
@@ -396,8 +412,10 @@ const buscarTrabajador = async () => {
   position: absolute;
   width: 19mm;
   height: 19mm;
-  left: 19mm;
-  top: 28mm;
+  /*left: 19mm;*/
+  left: 18mm;
+  /*top: 28mm;*/
+  top: 23mm;
   object-fit: cover;
   z-index: 2;
   border-radius: 3mm;
@@ -405,7 +423,7 @@ const buscarTrabajador = async () => {
 }
 .nombre {
   position: absolute;
-  top: 50mm;
+  top: 43mm;
   left: 0;
   width: 55mm;
   text-align: center;
@@ -416,7 +434,7 @@ const buscarTrabajador = async () => {
 }
 .cedula {
   position: absolute;
-  top: 71mm;
+  top: 60mm;
   left: 0;
   width: 55mm;
   text-align: center;
@@ -427,7 +445,8 @@ const buscarTrabajador = async () => {
 }
 .cargo {
   position: absolute;
-  top: 64.52mm;
+  top: 55mm;
+  /*top: 64.52mm;*/
   left: 0;
   width: 55mm;
   text-align: center;
@@ -445,26 +464,27 @@ const buscarTrabajador = async () => {
 .contenido-trasero {
   width: 100%;
   height: 100%;
-  padding: 5mm;
+  padding: 4mm;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .texto-trasero {
   width: 100%;
-  height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
+  padding-bottom: 2mm;
 }
 
 .parrafo-trasero {
   margin: 0;
-  padding: 0 2mm;
+  padding: 0 1mm;
   font-family: 'Georama', sans-serif;
-  font-size: 2.5mm;
-  line-height: 1.4;
+  font-size: 2.3mm;
+  line-height: 1.3;
   color: #2c3e50;
   text-align: justify;
   display: flex;
@@ -473,9 +493,32 @@ const buscarTrabajador = async () => {
 
 .bullet {
   font-weight: 700;
-  margin-right: 1.5mm;
+  margin-right: 1.2mm;
   flex-shrink: 0;
   color: #34495e;
+  font-size: 2.5mm;
+}
+
+/* Estilos para el contenedor del footer (sello y QR) */
+.footer-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 2mm;
+  gap: 2mm;
+}
+
+.sello-img {
+  width: 75px;
+  height: 75px;
+  object-fit: contain;
+}
+
+.qr-code {
+  background: white;
+  padding: 1.5mm;
+  border-radius: 2mm;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* Ajustes para impresión */

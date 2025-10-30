@@ -13,14 +13,25 @@ const { Client } = require('pg');
 dotenv.config();
 const app = express();
 
-// Configuración de CORS
+// Configuración de CORS mejorada
 app.use(cors({
-    origin: true,
+    origin: function(origin, callback) {
+        // Permitir solicitudes sin origin (como Postman, apps móviles, etc.)
+        if (!origin) return callback(null, true);
+        // Permitir todos los orígenes
+        return callback(null, true);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    credentials: true,
+    optionsSuccessStatus: 200
 }));
+
+// Middleware adicional para manejar preflight requests
+app.options('*', cors());
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 // Exponer la carpeta uploads como /uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Exponer la imagen no_person.png como /img/no_person.png

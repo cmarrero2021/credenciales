@@ -53,6 +53,7 @@ const {
 
 const router = express.Router();
 
+const multer = require('multer');
 const upload = require('./upload');
 
 // Rutas Públicas
@@ -69,12 +70,21 @@ router.post('/credencial/historico', saveCredentialPrint);
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
 // Upload foto usuario al crear servidor
 router.post('/servidor', upload.single('foto'), createServer); // Crear servidor con foto PNG
-router.post('/servidor', createServer); // Listar servidores
 router.get('/servidores', listServers); // Listar servidores
 router.get('/buscar_servidor/:cedula', seekServer);
 router.patch('/eliminar_servidor/:cedula', deleteServer);
 router.delete('/eliminar_servidor/:cedula', deleteServer);
-router.patch('/actualizar_servidor/:cedula', upload.single('foto'), updateServer);
+// Middleware para manejar errores de multer
+const handleMulterError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: 'Error al subir archivo: ' + err.message });
+    } else if (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    next();
+};
+
+router.patch('/actualizar_servidor/:cedula', upload.single('foto'), handleMulterError, updateServer);
 router.post('/actualizar_masiva_servidor', massUpdateServer);
 router.get('/servidores_estadisticas', serverStatistics);
 router.get('/adultos_horas', elderHour);
