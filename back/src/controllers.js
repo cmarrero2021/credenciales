@@ -166,12 +166,17 @@ exports.getCredencial = async (req, res) => {
 // Guardar histórico de impresión de credencial
 exports.saveCredentialPrint = async (req, res) => {
     const { cedula } = req.body;
+    console.log(`[SAVE_CREDENTIAL_PRINT] Iniciando para cédula: ${cedula}`);
     const client = await pool.connect();
     const fs = require('fs');
     const path = require('path');
     
     try {
+        await client.query('BEGIN');
+        console.log('[SAVE_CREDENTIAL_PRINT] Transacción iniciada.');
+
         // Buscar datos del servidor
+        console.log('[SAVE_CREDENTIAL_PRINT] Buscando datos del servidor...');
         const serverResult = await client.query(`
             SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.cargo, f.foto_url
             FROM vservidores s
@@ -180,28 +185,43 @@ exports.saveCredentialPrint = async (req, res) => {
         `, [cedula]);
 
         if (serverResult.rows.length === 0) {
+            console.log('[SAVE_CREDENTIAL_PRINT] Servidor no encontrado.');
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Servidor no encontrado.' });
         }
+        console.log('[SAVE_CREDENTIAL_PRINT] Servidor encontrado.');
 
         const servidor = serverResult.rows[0];
         
         // Leer la foto como bytea
+        console.log('[SAVE_CREDENTIAL_PRINT] Leyendo foto...');
         let fotoBuffer = null;
         if (servidor.foto_url && fs.existsSync(servidor.foto_url)) {
             fotoBuffer = fs.readFileSync(servidor.foto_url);
+            console.log('[SAVE_CREDENTIAL_PRINT] Foto leída desde:', servidor.foto_url);
         } else {
             // Si no hay foto, usar la imagen por defecto
             const defaultFotoPath = path.join(__dirname, '../img/no_person.png');
             if (fs.existsSync(defaultFotoPath)) {
                 fotoBuffer = fs.readFileSync(defaultFotoPath);
+                console.log('[SAVE_CREDENTIAL_PRINT] Usando foto por defecto.');
             }
         }
 
         if (!fotoBuffer) {
+            console.log('[SAVE_CREDENTIAL_PRINT] No se pudo obtener la foto.');
+            await client.query('ROLLBACK');
             return res.status(400).json({ error: 'No se pudo obtener la foto del servidor.' });
         }
+        console.log('[SAVE_CREDENTIAL_PRINT] Foto obtenida.');
+
+        // Actualizar registros existentes a no vigentes
+        console.log(`[SAVE_CREDENTIAL_PRINT] Actualizando registros antiguos para cédula: ${cedula}`);
+        const updateResult = await client.query('UPDATE historico SET vigente = false WHERE cedula = $1', [cedula]);
+        console.log(`[SAVE_CREDENTIAL_PRINT] Filas actualizadas: ${updateResult.rowCount}`);
 
         // Insertar en la tabla historico
+        console.log(`[SAVE_CREDENTIAL_PRINT] Insertando nuevo registro para cédula: ${cedula}`);
         await client.query(`
             INSERT INTO historico (institucion, cedula, nombres, apellidos, unidad, cargo, foto, vigente, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
@@ -214,6 +234,10 @@ exports.saveCredentialPrint = async (req, res) => {
             servidor.cargo,
             fotoBuffer
         ]);
+        console.log('[SAVE_CREDENTIAL_PRINT] Nuevo registro insertado.');
+
+        await client.query('COMMIT');
+        console.log('[SAVE_CREDENTIAL_PRINT] Transacción completada (COMMIT).');
 
         res.status(200).json({ 
             message: 'Histórico de impresión guardado exitosamente.',
@@ -222,9 +246,12 @@ exports.saveCredentialPrint = async (req, res) => {
             apellidos: servidor.apellidos
         });
     } catch (err) {
+        console.error('[SAVE_CREDENTIAL_PRINT] Error, revirtiendo transacción.', err);
+        await client.query('ROLLBACK');
         console.error('Error al guardar histórico de impresión:', err);
         res.status(500).json({ error: 'Error al guardar el histórico de impresión.' });
     } finally {
+        console.log('[SAVE_CREDENTIAL_PRINT] Liberando cliente.');
         client.release();
     }
 };
