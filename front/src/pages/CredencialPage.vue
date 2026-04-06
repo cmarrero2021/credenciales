@@ -22,9 +22,9 @@
             <p class="parrafo-trasero">
               <span class="bullet">•</span> Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria
             </p>
-            <p class="parrafo-trasero">
+            <!-- <p class="parrafo-trasero">
               <span class="bullet">•</span> Debe ser utilizado en un lugar visible
-            </p>
+            </p> -->
             <p class="parrafo-trasero">
               <span class="bullet">•</span> Puede ser retenido por la Dirección General de Seguridad cuando lo requiera
             </p>
@@ -34,9 +34,9 @@
             <p class="parrafo-trasero">
               <span class="bullet">•</span> Se agradece a todas las autoridades Civiles y Militares prestarle la mayor colaboración posible al portador de esta credencial, dentro de las normas legales
             </p>
-            <p class="parrafo-trasero">
+            <!-- <p class="parrafo-trasero">
               <span class="bullet">•</span> En caso de ser transferido a otra dirección o en caso de vencimiento, debe ser entregado
-            </p>
+            </p> -->
           </div>
           <div class="footer-container">
             <img src="/img/sello.png" alt="Sello" class="sello-img" />
