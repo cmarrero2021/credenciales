@@ -28,15 +28,26 @@ import { boot } from "quasar/wrappers";
 import axios from "axios";
 import { LocalStorage } from "quasar";
 
+const urlBaseEnv = import.meta.env.VITE_API_URL || "http://credenciales.minaamp.gob.ve";
+axios.defaults.baseURL = urlBaseEnv.replace(/\/+$/, '');
+
 export default boot(({ app }) => {
-  // Interceptor para añadir token automáticamente
   axios.interceptors.request.use((config) => {
+    // 💥 FILTRO NUCLEAR ANTIBARRAS 💥
+    // Si la URL tiene dobles barras (ignorando el http://), las convierte en una sola.
+    if (config.url) {
+      config.url = config.url.replace(/(?<!:)\/{2,}/g, '/');
+    }
+
     const token = LocalStorage.getItem("token");
-    if (token && config.url.includes("/api/")) {
+    if (token) {
+      config.headers = config.headers || {}
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
-  });
+  }, (err) => Promise.reject(err));
+
+  axios.interceptors.response.use((res) => res, (err) => Promise.reject(err));
 
   app.config.globalProperties.$axios = axios;
 });

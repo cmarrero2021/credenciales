@@ -55,14 +55,19 @@ exports.authorize = (requiredPermission) => {
 
         const client = await pool.connect();
         try {
-            // Obtener los permisos del usuario a través de sus roles
+            // Obtener los permisos explícitos del usuario (user_permissions)
+            // y los permisos derivados de sus roles (role_permissions).
+            // Usamos UNION para evitar duplicados.
             const result = await client.query(`
+                SELECT p.name AS permission_name FROM user_permissions up
+                JOIN permissions p ON up.permission_id = p.id
+                WHERE up.user_id = $1
+                UNION
                 SELECT p.name AS permission_name
-                FROM users u
-                JOIN user_roles ur ON u.id = ur.user_id
+                FROM user_roles ur
                 JOIN role_permissions rp ON ur.role_id = rp.role_id
                 JOIN permissions p ON rp.permission_id = p.id
-                WHERE u.id = $1 AND u.deleted_at IS NULL
+                WHERE ur.user_id = $1
             `, [userId]);
 
             const userPermissions = result.rows.map(row => row.permission_name);
@@ -73,7 +78,8 @@ exports.authorize = (requiredPermission) => {
 
             next();
         } catch (err) {
-            res.status(500).json({ error: 'Error al verificar los permisos.' });
+            console.error('Error in authorize middleware:', err && err.message)
+            res.status(500).json({ error: 'Error al verificar los permisos.', details: err.message });
         } finally {
             client.release();
         }

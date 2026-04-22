@@ -6,7 +6,7 @@ export default boot(({ app, router }) => {
   // Configurar axios para incluir el token en las peticiones
   axios.interceptors.request.use(
     (config) => {
-      const token = LocalStorage.getItem("authToken");
+      const token = LocalStorage.getItem("token");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -22,7 +22,7 @@ export default boot(({ app, router }) => {
     (response) => response,
     (error) => {
       if (error.response && error.response.status === 401) {
-        LocalStorage.remove("authToken");
+        LocalStorage.remove("token");
         LocalStorage.remove("userPermissions");
         router.push("/login");
       }

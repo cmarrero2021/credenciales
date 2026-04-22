@@ -72,9 +72,13 @@
           </div> -->
           <!-- ///////////////////////////// -->
         </div>
-        <div class="col-xs-2 col-sm-1">
-          <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm"
-            class="full-width" v-if="hasPermission('view_admin') && !isQuickEditMode" />
+          <div class="col-xs-2 col-sm-2 row items-center q-gutter-sm">
+          <div class="col row items-center q-gutter-sm" style="gap:8px;">
+            <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <q-btn icon="file_upload" label="CARGA MASIVA" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <!-- Batch page size selection removed per request (no longer used) -->
+          <!--  <q-btn icon="print" label="IMPRIMIR LOTE" color="teal" size="sm" :disable="!selectionModel.length" @click="generatePdfBatch(batchPageSize)" v-if="hasPermission('view_admin')" /> -->
+          </div>
         </div>
       </template>
 
@@ -92,7 +96,7 @@
           <div class="row items-center">
             <!-- Botón Editar -->
             <q-btn icon="edit" color="primary" title="Editar servidor" size="xs" @click.stop="openEditModal(props.row)"
-              class="q-mr-xs" v-if="hasPermission('view_admin')" />
+              class="q-mr-xs" v-if="(hasPermission('update_servidor') || hasPermission('view_admin'))" />
 
             <!-- Botón Marcas Votó -->
             <!-- <q-btn icon="check" color="secondary" title="Marcar que el servidor votó" size="xs"
@@ -100,7 +104,7 @@
 
             <!-- Botón Borrar -->
             <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor"
-              size="xs" class="q-mr-xs" v-if="hasPermission('view_admin')" />
+              size="xs" class="q-mr-xs" v-if="(hasPermission('delete_servidor') || hasPermission('view_admin'))" />
           </div>
         </q-td>
       </template>
@@ -316,7 +320,12 @@ const deleteServerURL = import.meta.env.VITE_BR_SERVER_URL;
 // Obtener permisos
 const hasPermission = (permissionName) => {
   const permissions = LocalStorage.getItem('permissions') || []
-  return permissions.some(p => p.name === permissionName)
+  return permissions.some(p => {
+    if (!p) return false
+    if (typeof p === 'string') return p === permissionName
+    if (typeof p === 'object' && p.name) return p.name === permissionName
+    return false
+  })
 }
 
 // Estado de la aplicación
@@ -328,6 +337,356 @@ const pagination = ref({
   page: 1,
   rowsPerPage: 10
 });
+// Selección para impresión por lotes
+const selectionModel = ref([])
+
+// Tamaño por página para impresión en lotes (UI removed); default used in function
+
+function chunkArray(arr, size) {
+  const res = []
+  for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size))
+  return res
+}
+
+// Imprimir lote desde módulo Servidores
+async function printBatchServidores(size = null) {
+  try {
+    const sel = selectionModel.value || []
+    if (!sel || sel.length === 0) {
+      Notify.create({ type: 'warning', message: 'No hay elementos seleccionados para imprimir.' })
+      return
+    }
+
+    // If `size` is a ref (passed from template), unwrap it
+    if (size && typeof size === 'object' && 'value' in size) size = size.value
+
+    // Determine selected rows: support selectionModel containing row objects or keys (id/cedula)
+    let selectedRows = []
+    if (sel.length && typeof sel[0] === 'object') {
+      selectedRows = sel
+    } else {
+      // allow numeric/string matches for id or cedula
+      const selSet = new Set(sel.map(x => (typeof x === 'number' ? String(x) : String(x))))
+      selectedRows = servers.value.filter(s => selSet.has(String(s.id)) || selSet.has(String(s.cedula)))
+    }
+
+    if (!selectedRows.length) {
+      Notify.create({ type: 'warning', message: 'No se encontraron registros seleccionados.' })
+      return
+    }
+
+    const pageSize = Number(size || 20)
+    const groups = chunkArray(selectedRows, pageSize)
+
+    // Verificar que todos los registros seleccionados tengan foto válida
+    const missing = selectedRows.filter(r => {
+      const fu = getFotoUrl(r.foto_url)
+      // Si la foto resuelta apunta a la imagen por defecto o está vacía, marcar como faltante
+      return !r.foto_url || fu.endsWith('/img/no_person.png') || fu.includes('no_person.png')
+    })
+    if (missing.length) {
+      const cedulas = missing.map(r => r.cedula || r.id).join(', ')
+      Notify.create({ type: 'negative', message: `No se imprimirá. Faltan fotos para las cédulas: ${cedulas}` })
+      return
+    }
+
+    const win = window.open('', '_blank')
+    if (!win) {
+      Notify.create({ type: 'negative', message: 'Bloqueador de ventanas emergentes impide la impresión masiva' })
+      return
+    }
+
+    // Datos para construir QR
+    const qrBaseUrl = import.meta.env.VITE_CREDENCIAL_QR_URL || (apiURL || '') + '/credenciales/cedula='
+
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi]
+      const html = []
+      html.push('<!doctype html><html><head><meta charset="utf-8"><title>Impresión masiva</title>')
+      html.push('<style>body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:8px} .sheet{display:flex;flex-wrap:wrap;gap:8px} .cred{width:55mm;height:85mm;box-sizing:border-box;border:0;margin:0;padding:0} .fondo{position:relative;width:55mm;height:85mm;overflow:hidden} .foto{position:absolute;right:8mm;top:18mm;width:19mm;height:19mm;object-fit:cover;border-radius:3mm;border:1px solid #888} .nombre{position:absolute;top:36mm;width:100%;text-align:center;font-size:4mm;font-weight:700} .cedula{position:absolute;top:40mm;width:100%;text-align:center;font-size:5.6mm;font-weight:700} .cargo{position:absolute;top:48mm;width:100%;text-align:center;font-size:3.2mm} .back{width:55mm;height:85mm;padding:4mm;box-sizing:border-box} .qr{position:absolute;right:6mm;bottom:6mm;width:18mm;height:18mm} @media print{ .cred{page-break-inside:avoid} }</style>')
+      html.push('</head><body>')
+      html.push('<div class="sheet">')
+      for (const r of group) {
+        const foto = getFotoUrl(r.foto_url)
+        const nombres = (r.nombres || '')
+        const apellidos = (r.apellidos || '')
+        const ced = r.cedula || ''
+        const institucion = r.institucion || ''
+        const area = r.area || ''
+        const cargo = r.cargo || ''
+        const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrBaseUrl + ced)}`
+
+        // Frontal
+        html.push(`<div class="cred"><div class="fondo"><img src="/img/frontal_carnet.png" style="width:55mm;height:85mm;position:absolute;left:0;top:0"/>`)
+        html.push(`<img class="foto" src="${foto}" alt="foto"/>`)
+        html.push(`<div class="nombre">${nombres} ${apellidos}</div>`)
+        html.push(`<div class="cedula">${ced}</div>`)
+        html.push(`<div class="cargo">${cargo}</div>`)
+        html.push('</div></div>')
+
+        // Trasera
+        html.push(`<div class="cred"><div class="back"><div style="font-size:2.3mm;color:#2c3e50">• Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</div><div style="position:relative;height:100%"><img class="qr" src="${qrImg}" /></div></div></div>`)
+      }
+      html.push('</div></body></html>')
+
+      win.document.open()
+      win.document.write(html.join(''))
+      win.document.close()
+      await new Promise(resolve => setTimeout(resolve, 700))
+      try { win.focus(); win.print() } catch (e) { console.error('Error printing group', e); Notify.create({ type: 'negative', message: 'Error al imprimir lote' }) }
+      if (gi < groups.length - 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+    try { win.close() } catch (e) {}
+  } catch (e) {
+    console.error('printBatchServidores error', e)
+    Notify.create({ type: 'negative', message: 'Error generando impresión masiva' })
+  }
+}
+
+// Generar un único PDF descargable con frontal+trasera por cada credencial
+async function generatePdfBatch(size = null) {
+  try {
+    const sel = selectionModel.value || []
+    if (!sel || sel.length === 0) {
+      Notify.create({ type: 'warning', message: 'No hay elementos seleccionados para imprimir.' })
+      return
+    }
+    if (size && typeof size === 'object' && 'value' in size) size = size.value
+
+    // Resolve selection rows (objects or keys)
+    let selectedRows = []
+    if (sel.length && typeof sel[0] === 'object') selectedRows = sel
+    else {
+      const selSet = new Set(sel.map(x => String(x)))
+      selectedRows = servers.value.filter(s => selSet.has(String(s.id)) || selSet.has(String(s.cedula)))
+    }
+    if (!selectedRows.length) {
+      Notify.create({ type: 'warning', message: 'No se encontraron registros seleccionados.' })
+      return
+    }
+
+    // Verificar fotos
+    const missing = selectedRows.filter(r => {
+      const fu = getFotoUrl(r.foto_url)
+      return !r.foto_url || fu.endsWith('/img/no_person.png') || fu.includes('no_person.png')
+    })
+    if (missing.length) {
+      const cedulas = missing.map(r => r.cedula || r.id).join(', ')
+      Notify.create({ type: 'negative', message: `No se generará el PDF. Faltan fotos para las cédulas: ${cedulas}` })
+      return
+    }
+
+    // Render batch by converting the single-card HTML into images using html2canvas + jsPDF
+    const html2canvasModule = await import('html2canvas')
+    const html2canvas = html2canvasModule && (html2canvasModule.default || html2canvasModule)
+    const { jsPDF } = await import('jspdf')
+
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+    const a4Wmm = 210
+    const a4Hmm = 297
+    const cardWmm = 55
+    const cardHmm = 85
+    const topOffsetMm = 22
+
+    // Container to render pages off-screen
+    const container = document.createElement('div')
+    container.style.position = 'fixed'
+    container.style.left = '-9999px'
+    container.style.top = '0'
+    document.body.appendChild(container)
+
+    for (let idx = 0; idx < selectedRows.length; idx++) {
+      const r = selectedRows[idx]
+
+      // Build HTML using the same classes/styles used by `CredencialPage.vue` so CSS matches
+      const styleBlock = `
+        @font-face {
+          font-family: 'Georama';
+          src: url('../assets/fonts/georama/Georama-Regular.ttf') format('truetype');
+          font-weight: 400;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Georama';
+          src: url('../assets/fonts/georama/Georama-Bold.ttf') format('truetype');
+          font-weight: 700;
+          font-style: normal;
+        }
+        .credencial-preview {
+          width: 55mm;
+          height: 85mm;
+          position: relative;
+          border: 1px solid #ccc;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+          background: #fff;
+        }
+        .fondo-img {
+          position: absolute;
+          width: 55mm;
+          height: 85mm;
+          left: 0;
+          top: 0;
+          z-index: 1;
+        }
+        .foto-trabajador {
+          position: absolute;
+          width: 19mm;
+          height: 19mm;
+          left: 18mm;
+          top: 20mm;
+          object-fit: cover;
+          z-index: 2;
+          border-radius: 3mm;
+          border: 1px solid #888;
+        }
+        .nombre { position: absolute; top: 40mm; left: 0; width: 55mm; text-align: center; font-size: 4mm; font-family: 'Georama', sans-serif; font-weight: 700; z-index: 2; }
+        .cedula { position: absolute; top: 44mm; left: 0; width: 55mm; text-align: center; font-size: 5.6mm; font-family: 'Georama', sans-serif; font-weight: 700; z-index: 2; }
+        .cargo { position: absolute; top: 52mm; left: 0; width: 55mm; text-align: center; font-size: 3.2mm; font-family: 'Georama', sans-serif; font-weight: 400; z-index: 2; }
+
+        /* Estilos para la parte trasera de la credencial (copiados de CredencialPage.vue) */
+        /* Estilos para la parte trasera de la credencial */
+.credencial-trasera {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.contenido-trasero {
+  width: 100%;
+  height: 100%;
+  padding: 4mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.texto-trasero {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  padding-bottom: 2mm;
+}
+
+.parrafo-trasero {
+  margin: 0;
+  padding: 0 1mm;
+  font-family: 'Georama', sans-serif;
+  font-size: 2.3mm;
+  line-height: 1.3;
+  color: #2c3e50;
+  text-align: justify;
+  display: flex;
+  align-items: flex-start;
+}
+
+.bullet {
+  font-weight: 700;
+  margin-right: 1.2mm;
+  flex-shrink: 0;
+  color: #34495e;
+  font-size: 2.5mm;
+}
+
+/* Estilos para el contenedor del footer (sello y QR) */
+.footer-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start; /* subir el QR dentro del contenedor */
+  padding-top: 1.5mm; /* un poco menos de padding superior */
+  gap: 2mm;
+}
+
+.sello-img {
+  width: 110px;
+  height: 100px;
+  object-fit: contain;
+  margin-left: -4mm; /* acercar el sello hacia la izquierda */
+  margin-top: -1.5mm; /* alinear un poco más arriba si hace falta */
+}
+
+.qr-code {
+  background: white;
+  padding: 1.5mm;
+  border-radius: 2mm;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transform: translateY(-5mm); /* elevar el QR dentro de la tarjeta */
+}
+
+/* Ajustes para impresión */
+@media print {
+  .credencial-frontal {
+    page-break-after: always;
+  }
+
+  .credencial-trasera {
+    page-break-before: always;
+  }
+
+  /* Asegurar que ambas credenciales se impriman */
+  .credencial-preview {
+    display: block !important;
+    visibility: visible !important;
+  }
+}
+  `;
+
+  const frontHtml = `
+        <div class="credencial-preview credencial-frontal">
+          <img class="fondo-img" src="/img/frontal_carnet.png" />
+          <img class="foto-trabajador" src="${getFotoUrl(r.foto_url)}" />
+          <div class="nombre">${(r.nombres || '') + ' ' + (r.apellidos || '')}</div>
+          <div class="cedula">${r.cedula || ''}</div>
+          <div class="cargo">${r.cargo || ''}</div>
+        </div>
+      `
+
+      container.insertAdjacentHTML('beforeend', `<div style="width:${a4Wmm}mm;height:${a4Hmm}mm;background:#fff;display:flex;justify-content:center;align-items:flex-start;margin:0;padding:0"><style>${styleBlock}</style><div style="margin-top:${topOffsetMm}mm">${frontHtml}</div></div>`)
+      const pageEl = container.lastElementChild
+      await new Promise(resolve => setTimeout(resolve, 80))
+      const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true })
+      const imgData = canvas.toDataURL('image/jpeg', 0.95)
+      if (idx > 0) pdf.addPage()
+      pdf.addImage(imgData, 'JPEG', 0, 0, a4Wmm, a4Hmm)
+      container.removeChild(pageEl)
+
+      // Back page: render with same stylesheet for identical layout
+      const qrBase = import.meta.env.VITE_CREDENCIAL_QR_URL || (apiURL || '') + '/credenciales/cedula='
+      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrBase + r.cedula)}`
+      const backHtml = `
+        <div class="credencial-preview credencial-trasera">
+          <div class="contenido-trasero">
+            <div class="texto-trasero">
+              <p class="parrafo-trasero"><span class="bullet">•</span> Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</p>
+              <p class="parrafo-trasero"><span class="bullet">•</span> Puede ser retenido por la Dirección General de Seguridad cuando lo requiera</p>
+              <p class="parrafo-trasero"><span class="bullet">•</span> Es intransferible</p>
+              <p class="parrafo-trasero"><span class="bullet">•</span> Se agradece a todas las autoridades Civiles y Militares prestarle la mayor colaboración posible al portador de esta credencial, dentro de las normas legales</p>
+            </div>
+            <div class="footer-container">
+              <img src="/img/sello.png" alt="Sello" class="sello-img" />
+              <img class="qr-code" src="${qrImgUrl}" />
+            </div>
+          </div>
+        </div>
+      `
+
+      container.insertAdjacentHTML('beforeend', `<div style="width:${a4Wmm}mm;height:${a4Hmm}mm;background:#fff;display:flex;justify-content:center;align-items:flex-start;margin:0;padding:0"><style>${styleBlock}</style><div style="margin-top:${topOffsetMm}mm">${backHtml}</div></div>`)
+      await new Promise(resolve => setTimeout(resolve, 80))
+      const backPage = container.lastElementChild
+      const canvasBack = await html2canvas(backPage, { scale: 2, useCORS: true })
+      const imgBack = canvasBack.toDataURL('image/jpeg', 0.95)
+      pdf.addPage()
+      pdf.addImage(imgBack, 'JPEG', 0, 0, a4Wmm, a4Hmm)
+      container.removeChild(backPage)
+    }
+
+    document.body.removeChild(container)
+    pdf.save(`credenciales_lote_${Date.now()}.pdf`)
+    Notify.create({ type: 'positive', message: 'PDF generado y descargado' })
+  } catch (err) {
+    console.error('generatePdfBatch error', err)
+    Notify.create({ type: 'negative', message: 'Error generando PDF: ' + (err.message || err) })
+  }
+}
 
 // Búsqueda general
 const searchQuery = ref('');
@@ -388,6 +747,11 @@ const openNewModal = () => {
   editDialog.value = true;
 };
 
+// Navegar a la página de carga masiva
+const goToMassive = () => {
+  router.push('/massive_servers')
+}
+
 // Estado para el modo edición rápida
 const isQuickEditMode = ref(false);
 const editingRow = ref(null);
@@ -402,6 +766,14 @@ const fetchServers = async () => {
     console.log("servers:", servers.value)
   } catch (error) {
     console.error('Error al obtener las revistas:', error);
+    const status = error.response?.status;
+    if (status === 403) {
+      Notify.create({ type: 'negative', message: 'Acceso denegado: no tienes permisos para ver servidores.' })
+      // Redirect to home or leave page empty
+      // router.push('/')
+    } else {
+      Notify.create({ type: 'negative', message: 'Error cargando servidores.' })
+    }
   } finally {
     loading.value = false;
   }
@@ -435,15 +807,15 @@ const fetchOptions = async () => {
       value: item.id
     }));
 
-    // Obtener estados
-    const cargosResponse = await axios.get(estadosURL);
+    // Obtener cargos
+    const cargosResponse = await axios.get('/auth/servidores_cargos');
     options.value.cargo = cargosResponse.data.map(item => item.cargo);
-    const cargosResponseU = await axios.get(estadosURL);
-    // const cargosResponseU = await axios.get(cargosLsURL);
+
+    const cargosResponseU = await axios.get('/auth/servidores_cargos');
     optionsu.value.cargo = cargosResponseU.data.map(item => ({
       label: item.cargo,
       value: item.id
-    }));
+}));
 
   } catch (error) {
     console.error('Error al obtener las opciones de los filtros:', error);
@@ -680,7 +1052,14 @@ onMounted(async () => {
     router.push('/login')
   }
   await fetchOptions();
-  fetchServers();
+  // Only fetch servers if the user has permission to read servers
+  if (hasPermission('read_servidor') || hasPermission('view_admin')) {
+    await fetchServers();
+  } else {
+    loading.value = false;
+    // Optionally notify the user they don't have access
+    // Notify.create({ type: 'warning', message: 'No tienes permisos para ver la lista de servidores.' })
+  }
 });
 </script>
 

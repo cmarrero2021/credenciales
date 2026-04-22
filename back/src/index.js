@@ -4,6 +4,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const routes = require('./routes');
+const controllers = require('./controllers');
 const pool = require('./db');
 const listEndpoints = require('./endpointlister');
 const http = require('http');
@@ -13,29 +14,73 @@ const { Client } = require('pg');
 dotenv.config();
 const app = express();
 
-// Configuración de CORS mejorada
-app.use(cors({
-    origin: function(origin, callback) {
-        // Permitir solicitudes sin origin (como Postman, apps móviles, etc.)
+app.set('etag', false);
+
+const corsOptions = {
+    origin: function (origin, callback) {
         if (!origin) return callback(null, true);
-        // Permitir todos los orígenes
         return callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Headers', 'Access-Control-Request-Method'],
+    exposedHeaders: ['Content-Range', 'X-Total-Count'],
     credentials: true,
     optionsSuccessStatus: 200
-}));
+};
 
-// Middleware adicional para manejar preflight requests
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// Manejar preflight usando las mismas opciones (importante para Authorization)
+app.options('*', cors(corsOptions));
+
+// Asegúrese de que cada solicitud previa OPTIONS reciba una respuesta de éxito explícita y permita el encabezado de autorización.
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Authorization,authorization,Content-Type,X-Requested-With,Accept,Origin,Access-Control-Request-Headers,Access-Control-Request-Method');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
+    next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Exponer la carpeta uploads como /uploads
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-// Exponer la imagen no_person.png como /img/no_person.png
-app.use('/img/no_person.png', express.static(path.join(__dirname, 'no_person.png')));
+// Exponer la carpeta uploads como /uploads y forzar headers que eviten 304 Not Modified cuando queramos refrescar
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+    etag: false,
+    setHeaders: (res, filePath, stat) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        try { res.removeHeader('ETag') } catch (e) { }
+        try { res.removeHeader('Last-Modified') } catch (e) { }
+    }
+}));
+
+app.use('/img/cintillomi.png', express.static(path.join(__dirname, '../../front/public/img/cintillomi.png'), {
+    etag: false,
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        try { res.removeHeader('ETag') } catch (e) { }
+        try { res.removeHeader('Last-Modified') } catch (e) { }
+    }
+}));
+
+// Exponer la imagen no_person.png como /img/no_person.png con mismos headers
+app.use('/img/no_person.png', express.static(path.join(__dirname, 'no_person.png'), {
+    etag: false,
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        try { res.removeHeader('ETag') } catch (e) { }
+        try { res.removeHeader('Last-Modified') } catch (e) { }
+    }
+}));
+// Página pública para credenciales (usar por QR sin el prefijo /auth)
+app.get('/credenciales/cedula=:cedula', controllers.getCredencialPage);
 app.use('/auth', routes);
 app.get('/list-endpoints', (req, res) => {
     const endpoints = listEndpoints(app);
@@ -49,7 +94,7 @@ const wsClients = new Set();
 
 wss.on('connection', (ws) => {
     wsClients.add(ws);
-     console.log('Nuevo cliente WebSocket conectado. Total:', wsClients.size);
+    console.log('Nuevo cliente WebSocket conectado. Total:', wsClients.size);
     ws.on('close', () => {
         wsClients.delete(ws);
         console.log('Cliente WebSocket desconectado. Total:', wsClients.size); // <-- Opcional
@@ -65,15 +110,21 @@ const pgListener = new Client({
     port: parseInt(process.env.DB_PORT, 10),
 });
 
-pgListener.connect().then(() => {
-    console.log('🟢 Escuchando canal table_changes de PostgreSQL...');
-    pgListener.query('LISTEN table_changes');
-});
-pgListener.query('LISTEN table_changes').then(() => {
-    console.log('LISTEN ejecutado correctamente');
-});
+// Iniciar pgListener con manejo de errores para no bloquear el servidor si la BD no está disponible
+pgListener.connect()
+    .then(() => {
+        console.log('🟢 Conectado a PostgreSQL para LISTEN table_changes');
+        return pgListener.query('LISTEN table_changes');
+    })
+    .then(() => {
+        console.log('LISTEN table_changes ejecutado correctamente');
+    })
+    .catch((err) => {
+        console.error('No se pudo inicializar pgListener (LISTEN table_changes):', err && err.message ? err.message : err);
+    });
+
 pgListener.on('error', (err) => {
-    console.error('Error en pgListener:', err);
+    console.error('Error en pgListener:', err && err.message ? err.message : err);
 });
 
 pgListener.on('notification', (msg) => {

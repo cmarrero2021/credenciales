@@ -74,7 +74,14 @@ const handleLogin = async () => {
     if (response.data.message === "Inicio de sesión exitoso.") {
       // Almacenar token y permisos en LocalStorage (opcional)
       LocalStorage.set('token', response.data.token);
-      LocalStorage.set('permissions', response.data.permissions);
+      // Normalizar permisos: pueden venir como strings o como objetos { name: string }
+      let perms = response.data.permissions || [];
+      if (perms && perms.length > 0 && typeof perms[0] === 'string') {
+        perms = perms.map(p => ({ name: p }));
+      }
+      // Store permissions in both keys to support different consumers in the app
+      LocalStorage.set('permissions', perms);
+      LocalStorage.set('userPermissions', perms);
 
       Notify.create({
         message: "Ingresó correctamente",
@@ -94,9 +101,10 @@ const handleLogin = async () => {
       });
     }
   } catch (error) {
-    const mensaje = error == 'AxiosError: Request failed with status code 403'
+    const serverMessage = error?.response?.data?.error ?? error?.response?.data?.message;
+    const mensaje = serverMessage ?? (error?.response?.status === 403
       ? 'El usuario ya tiene una sesión abierta. Ciérrela e intente de nuevo'
-      : 'Error de conexión. Intente nuevamente.';
+      : 'Error de conexión. Intente nuevamente.');
     Notify.create({
       message: mensaje,
       color: "negative",

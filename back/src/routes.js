@@ -9,6 +9,7 @@ const {
     massUpdateServer,
     serverStatistics,
     deleteServer,
+    enableServer,
     eldersInsert,
     elderStatistics,
     elderState,
@@ -21,6 +22,7 @@ const {
     serverTotals,
     serverHourState,
     serverInstitutionAreaTotals,
+    serverState,
     readRenac,
     listInstitutions,
     listHeadquarters,
@@ -63,17 +65,28 @@ router.post('/verify-email', verifyEmail); // Verificación de correo electróni
 router.post('/force-logout', forceLogout); // Cierre forzoso de sesión
 
 // Endpoint para credencial (público)
+// Nota: registrar las rutas específicas (/historico) ANTES que la ruta dinámica
+// '/credencial/:cedula' para evitar que ':cedula' capture la palabra "historico".
+// Guardar histórico: requiere autenticación para saber quién imprimió
+router.post('/credencial/historico', authenticate, saveCredentialPrint);
+// Listar histórico de impresiones (protegido)
+router.get('/credencial/historico', authenticate, require('./controllers').listCredentialHistory);
+// Buscar credencial por cédula (debe ir después de las rutas específicas)
 router.get('/credencial/:cedula', getCredencial);
-router.post('/credencial/historico', saveCredentialPrint);
+// Página pública utilizada por los códigos QR para mostrar información de credenciales
+router.get('/credenciales/cedula=:cedula', require('./controllers').getCredencialPage);
 
 // Rutas Protegidas
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
-// Upload foto usuario al crear servidor
-router.post('/servidor', upload.single('foto'), createServer); // Crear servidor con foto PNG
-router.get('/servidores', listServers); // Listar servidores
-router.get('/buscar_servidor/:cedula', seekServer);
-router.patch('/eliminar_servidor/:cedula', deleteServer);
-router.delete('/eliminar_servidor/:cedula', deleteServer);
+// Upload foto usuario al crear servidor - requires appropriate permissions
+router.post('/servidor', authenticate, authorize('create_servidor'), upload.single('foto'), createServer); // Crear servidor con foto PNG
+router.get('/servidores', authenticate, authorize('read_servidor'), listServers); // Listar servidores
+router.get('/buscar_servidor/:cedula', authenticate, authorize('read_servidor'), seekServer);
+// Requieren autenticación y permisos específicos: only users with 'update_historico' may enable/disable carnets (RRHH)
+router.patch('/eliminar_servidor/:cedula', authenticate, authorize('update_historico'), deleteServer);
+router.patch('/habilitar_servidor/:cedula', authenticate, authorize('update_historico'), enableServer);
+// Physical delete still requires delete permission
+router.delete('/eliminar_servidor/:cedula', authenticate, authorize('delete_servidor'), deleteServer);
 // Middleware para manejar errores de multer
 const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
@@ -84,9 +97,9 @@ const handleMulterError = (err, req, res, next) => {
     next();
 };
 
-router.patch('/actualizar_servidor/:cedula', upload.single('foto'), handleMulterError, updateServer);
-router.post('/actualizar_masiva_servidor', massUpdateServer);
-router.get('/servidores_estadisticas', serverStatistics);
+router.patch('/actualizar_servidor/:cedula', authenticate, authorize('update_servidor'), upload.single('foto'), handleMulterError, updateServer);
+router.post('/actualizar_masiva_servidor', authenticate, authorize('update_servidor'), massUpdateServer);
+router.get('/servidores_estadisticas', authenticate, authorize('read_servidor'), serverStatistics);
 router.get('/adultos_horas', elderHour);
 router.get('/adultos_horas_estados', elderHourState);
 router.get('/servidores_horas_estados', serverHourState);
@@ -100,10 +113,11 @@ router.post('/insertar_adultos', eldersInsert);
 router.get('/consulta_renac', readRenac);
 router.get('/adultos_estadisticas', elderStatistics);
 router.get('/adultos_estados', elderState);
-router.get('/servidores_cargos', serverPosition);
-router.get('/instituciones', listInstitutions); // Listar servidores
-router.get('/sedes', listHeadquarters); // Listar sedes
-router.get('/areas', listAreas); // Listar areas
+router.get('/servidores_estados', serverState)
+router.get('/auth/servidores_cargos', serverPosition);
+router.get('/auth/instituciones', listInstitutions); // Listar servidores por institución
+router.get('/auth/sedes', listHeadquarters); // Listar sedes
+router.get('/auth/areas', listAreas); // Listar areas
 router.get('/session-settings/global', authenticate, authorize('get_global_session_settings'), getGlobalSessionTimeout);
 router.patch('/session-settings/global', authenticate, authorize('update_global_session_settings'), updateGlobalSessionTimeout);
 router.patch('/users/:userId/session-timeout', authenticate, authorize('update_user_session_timeout'), updateUserSessionTimeout);
@@ -126,6 +140,8 @@ router.post('/force-logout', forceLogout); // Cerrar sesión
 // Roles
 router.get('/roles', authenticate, authorize('list_roles'), listRoles); // Listar roles
 router.post('/roles', authenticate, authorize('create_role'), createRole); // Crear rol
+// Debug route: retornar permisos del usuario autenticado (temporal)
+router.get('/debug/permissions', authenticate, require('./controllers').debugPermissions);
 // router.put('/roles/:roleId', authenticate, authorize('update_role'), updateRole); // Actualizar rol
 // router.delete('/roles/:roleId', authenticate, authorize('delete_role'), deleteRole); // Borrado lógico
 // router.delete('/roles/:roleId/permanent', authenticate, authorize('delete_role_permanently'), deleteRolePermanently); // Borrado físico

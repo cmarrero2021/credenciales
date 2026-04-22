@@ -15,7 +15,7 @@
           <q-item-section avatar><q-icon name="home" /></q-item-section>
           <q-item-section>Inicio</q-item-section>
         </q-item>
-        <q-item clickable v-ripple to="/servers" v-if="hasPermission('view_admin')">
+        <q-item clickable v-ripple to="/servers" v-if="hasPermission('view_admin') || hasPermission('read_servidor') || hasPermission('create_servidor')">
           <q-item-section avatar><q-icon name="person" /></q-item-section>
           <q-item-section>Servidores</q-item-section>
         </q-item>
@@ -27,35 +27,28 @@
           <q-item-section avatar><q-icon name="elderly" /></q-item-section>
           <q-item-section>Carga masiva adultos mayores</q-item-section>
         </q-item>
-        <q-item clickable v-ripple to="/credencial" v-if="hasPermission('view_admin')">
+        <q-item clickable v-ripple to="/credencial" v-if="showCarnets">
           <q-item-section avatar><q-icon name="badge" /></q-item-section>
           <q-item-section>Carnets</q-item-section>
+        </q-item>
+        <q-item clickable v-ripple :to="credencialManageLink" v-if="hasPermission('view_admin') || hasPermission('view_admin1') || hasPermission('update_historico')">
+          <q-item-section avatar><q-icon name="badge" /></q-item-section>
+          <q-item-section>Gestión Carnets</q-item-section>
+        </q-item>
+        <q-item clickable v-ripple to="/admin/users" v-if="hasPermission('list_users') || hasPermission('view_admin')">
+          <q-item-section avatar><q-icon name="supervisor_account" /></q-item-section>
+          <q-item-section>Gestión Usuarios</q-item-section>
         </q-item>
       </q-list>
     </q-drawer>
     <q-page-container>
-      <router-view />
+      <router-view :key="$route.fullPath" />
     </q-page-container>
   </q-layout>
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount } from 'vue'
-onMounted(() => {
-  window.addEventListener('toggle-drawer', toggleLeftDrawer)
-  window.addEventListener('collapse-drawer', colapsarDrawer)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('toggle-drawer', toggleLeftDrawer)
-  window.removeEventListener('collapse-drawer', colapsarDrawer)
-})
-
-function colapsarDrawer() {
-  if (leftDrawerOpen.value) {
-    leftDrawerOpen.value = false;
-  }
-}
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { LocalStorage, Notify } from 'quasar'
 import axios from 'axios'
@@ -68,10 +61,75 @@ function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value
 }
 
-function hasPermission(permissionName) {
-  const permissions = LocalStorage.getItem('permissions') || []
-  return permissions.some(p => p.name === permissionName)
+function colapsarDrawer() {
+  if (leftDrawerOpen.value) leftDrawerOpen.value = false
 }
+
+onMounted(() => {
+  window.addEventListener('toggle-drawer', toggleLeftDrawer)
+  window.addEventListener('collapse-drawer', colapsarDrawer)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('toggle-drawer', toggleLeftDrawer)
+  window.removeEventListener('collapse-drawer', colapsarDrawer)
+})
+
+function navigate(path) {
+  try {
+    router.push(path).catch(() => {})
+  } catch (e) {
+    // ignore
+  }
+  // keep the drawer open per user request
+}
+
+function hasPermission(permissionName) {
+  function hasPermissionName(rawPerms, permissionName){
+    if (!rawPerms) return false
+    if (Array.isArray(rawPerms)){
+      return rawPerms.some(p => {
+        if (!p) return false
+        if (typeof p === 'string') return p === permissionName
+        if (typeof p === 'object') return (p.name === permissionName) || (p.permission_name === permissionName) || (p.permission === permissionName) || (p.key === permissionName)
+        return false
+      })
+    }
+    if (typeof rawPerms === 'object'){
+      if (rawPerms[permissionName]) return true
+      return Object.values(rawPerms).some(v => hasPermissionName(v, permissionName))
+    }
+    if (typeof rawPerms === 'string'){
+      if (rawPerms.includes(',')){
+        return rawPerms.split(',').map(s => s.trim()).some(s => s === permissionName)
+      }
+      return rawPerms === permissionName
+    }
+    return false
+  }
+
+  const permsA = LocalStorage.getItem('permissions')
+  const permsB = LocalStorage.getItem('userPermissions')
+  if (hasPermissionName(permsA, permissionName)) return true
+  if (hasPermissionName(permsB, permissionName)) return true
+  return false
+}
+
+const credencialManageLink = computed(() => {
+  // Admins go to full management; RRHH go to the dedicated RRHH carnets page
+  if (hasPermission('view_admin')) return '/credencial/manage'
+  if (hasPermission('update_historico')) return '/credencial/rrhh-carnets'
+  if (hasPermission('read_credencial') || hasPermission('print_credencial')) return '/credencial'
+  return '/'
+})
+
+const showCarnets = computed(() => {
+  const isAdmin = hasPermission('view_admin') || hasPermission('view_admin1')
+  const canPrint = hasPermission('print_credencial')
+  const isRRHH = hasPermission('update_historico')
+  // If the user is RRHH (can update historico) and is not admin, hide the search module regardless of print permission
+  if (isRRHH && !isAdmin) return false
+  return isAdmin || canPrint
+})
 
 async function logout() {
   try {
@@ -82,10 +140,7 @@ async function logout() {
         'Content-Type': 'application/json'
       }
     })
-    Notify.create({
-      message: 'Sesión cerrada correctamente',
-      color: 'positive'
-    })
+    Notify.create({ message: 'Sesión cerrada correctamente', color: 'positive' })
   } catch (error) {
     console.error('Error al cerrar sesión:', error)
   } finally {
