@@ -1,0 +1,5 @@
+cedula,nombres,apellidos,institucion,sede,adscripcion,cargo
+10000001,JUAN,PEREZ,Instituto Nacional,Sede Central,Area A,Analista
+10000002,MARIA,GONZALEZ,Otra Institucion,Sede Norte,Area B,Coordinador
+10000003,LUIS,LOPEZ,Instituto Nacional,Sede Central,Area C,Tecnico
+10000009,SIN,NOMBRE,NoExiste,Sede X,Area X,Cargo X

@@ -1,0 +1,33 @@
+bd/
+back/uploads/
+front/uploads/
+
+
+
+# --- General ---
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# --- Backend (Node.js) ---
+back/node_modules/
+back/.env
+back/.env.local
+back/.env.test
+back/npm-debug.log*
+back/logs/
+
+# --- Frontend (Quasar / Vue.js) ---
+front/node_modules/
+# Carpeta de compilación final para producción
+front/dist/
+# Archivos temporales de Quasar
+front/.quasar/
+# Variables de entorno del front
+front/.env
+front/.env.local
+
+# --- Base de Datos (PostgreSQL) ---
+*.sql
+*.sqlite
