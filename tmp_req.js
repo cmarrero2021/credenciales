@@ -1,1 +1,1 @@
-const http=require("http"); http.get("http://localhost:3001/credenciales/cedula=20424886", res => { let s=""; res.on("data", c => s+=c); res.on("end", () => { console.log("STATUS", res.statusCode); console.log(s.slice(0,400)); }); }).on("error", e => console.error(e));
+const http = require("http"); http.get("https://localhost:3001/credenciales/cedula=20424886", res => { let s = ""; res.on("data", c => s += c); res.on("end", () => { console.log("STATUS", res.statusCode); console.log(s.slice(0, 400)); }); }).on("error", e => console.error(e));

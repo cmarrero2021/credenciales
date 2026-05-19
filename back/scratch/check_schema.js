@@ -1,22 +1,12 @@
-const pool = require('./src/db');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+const pool = require('../src/db');
 async function checkSchema() {
     const client = await pool.connect();
     try {
-        const res = await client.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'servidores'
-        `);
-        console.log('Columns in servidores:');
+        const res = await client.query('SELECT cedula, nombres, apellidos FROM servidores LIMIT 5');
+        console.log('Servidores:');
         console.table(res.rows);
-
-        const res2 = await client.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'fotos_usuarios'
-        `);
-        console.log('Columns in fotos_usuarios:');
-        console.table(res2.rows);
     } catch (err) {
         console.error(err);
     } finally {

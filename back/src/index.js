@@ -153,5 +153,5 @@ pgListener.on('notification', (msg) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor HTTP y WebSocket corriendo en http://0.0.0.0:${PORT}`);
+    console.log(`Servidor HTTP y WebSocket corriendo en https://0.0.0.0:${PORT}`);
 });

@@ -45,7 +45,7 @@ function normalizeReason(raw) {
 // Crear servidores
 exports.createServer = async (req, res) => {
     const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id, condicion } = req.body;
-    
+
     // Convertir IDs vacíos a null para evitar errores en Postgres
     // Convertir IDs vacíos a null y asegurar que sean enteros para evitar errores en Postgres
     const areaId = (area_id === '' || area_id === null || area_id === undefined) ? null : parseInt(area_id);
@@ -113,7 +113,7 @@ exports.createServer = async (req, res) => {
         await client.query('COMMIT');
         res.status(200).json({ message: 'Servidor creado exitosamente.' });
     } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch(() => { });
         console.error('ERROR en createServer:', err);
         // Eliminar foto si fue subida y ocurre cualquier error
         if (fotoPath) {
@@ -146,7 +146,7 @@ exports.listCredentialHistory = async (req, res) => {
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS motivo_deshabilitado text");
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS fecha_deshabilitado timestamptz");
         } catch (e) { console.warn('No se pudo asegurar columnas:', e && e.message) }
-        
+
         let result = await client.query(`
                 SELECT h.id, h.institucion, h.cedula, h.nombres, h.apellidos, h.unidad, h.cargo, h.vigente, h.created_at,
                        encode(h.foto, 'base64') as foto_b64,
@@ -247,7 +247,7 @@ exports.listServers = async (req, res) => {
         const defaultFoto = '/img/no_person.png';
         const uploadsDir = path.join(__dirname, '../uploads');
         let uploadFiles = [];
-        try { if (fs.existsSync(uploadsDir)) uploadFiles = fs.readdirSync(uploadsDir); } catch(e){}
+        try { if (fs.existsSync(uploadsDir)) uploadFiles = fs.readdirSync(uploadsDir); } catch (e) { }
 
         const servidores = result.rows.map(row => {
             let foto_url = row.foto_url;
@@ -269,7 +269,7 @@ exports.listServers = async (req, res) => {
                         const ext = path.extname(realPath).toLowerCase();
                         const mime = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
                         final_url = `data:${mime};base64,${imgBuffer.toString('base64')}`;
-                    } catch(e) {
+                    } catch (e) {
                         final_url = defaultFoto;
                     }
                 } else {
@@ -349,7 +349,7 @@ exports.getCredencial = async (req, res) => {
                         const fileMatch = files.find(f => f.toLowerCase() === nombreFoto.toLowerCase());
                         if (fileMatch) realPath = path.join(uploadsDir, fileMatch);
                     }
-                } catch(e) {}
+                } catch (e) { }
                 // 3) Fallback: construir ruta directa
                 if (!realPath) realPath = path.join(uploadsDir, nombreFoto);
             }
@@ -359,7 +359,7 @@ exports.getCredencial = async (req, res) => {
                     const ext = path.extname(realPath).toLowerCase();
                     const mime = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
                     final_url = `data:${mime};base64,${imgBuffer.toString('base64')}`;
-                } catch(e) {
+                } catch (e) {
                     console.warn('[getCredencial] No se pudo leer imagen, usando default:', e.message);
                     final_url = '/img/no_person.png';
                 }
@@ -449,7 +449,7 @@ exports.getCredencialPage = async (req, res) => {
                     const files = fs.readdirSync(uploadsDir);
                     fileMatch = files.find(f => f.toLowerCase() === nombreFoto.toLowerCase());
                 }
-            } catch(e) {}
+            } catch (e) { }
             if (fileMatch) {
                 final_url = `/uploads/${fileMatch}`;
             } else {
@@ -628,7 +628,7 @@ exports.saveCredentialPrint = async (req, res) => {
                         realPath = path.join(uploadsDir, fileMatch);
                     }
                 }
-            } catch(e) {}
+            } catch (e) { }
             if (!realPath) realPath = path.join(uploadsDir, nombreFoto);
 
             if (fs.existsSync(realPath)) {
@@ -636,7 +636,7 @@ exports.saveCredentialPrint = async (req, res) => {
                 console.log('[SAVE_CREDENTIAL_PRINT] Foto leída desde:', realPath);
             }
         }
-        
+
         if (!fotoBuffer) {
             // Si no hay foto, usar la imagen por defecto
             const defaultFotoPath = path.join(__dirname, '../img/no_person.png');
@@ -775,12 +775,16 @@ exports.updateServer = async (req, res) => {
     console.log('FotoPath:', fotoPath);
 
     try {
+        console.log('SQL DEBUG: Iniciando transacción BEGIN');
         await client.query('BEGIN');
 
         // 1. Verificar si el servidor existe
-        const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+        const queryExists = 'SELECT id FROM servidores WHERE cedula = $1';
+        console.log('SQL DEBUG [existsRes]:', queryExists, 'params:', [cedula]);
+        const existsRes = await client.query(queryExists, [cedula]);
         if (existsRes.rows.length === 0) {
             console.log('Cédula no encontrada:', cedula);
+            console.log('SQL DEBUG: Ejecutando ROLLBACK por cédula no encontrada');
             await client.query('ROLLBACK');
             if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) { } }
             return res.status(404).json({ error: 'La cédula no existe.' });
@@ -832,7 +836,7 @@ exports.updateServer = async (req, res) => {
         if (updates.length > 0) {
             const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length + 1}`;
             const queryValues = [...values, cedula];
-            console.log('Ejecutando update servidores:', query, queryValues);
+            console.log('SQL DEBUG [updateServidores]:', query, 'params:', queryValues);
             await client.query(query, queryValues);
         } else {
             console.log('No hay cambios en campos de texto para servidores.');
@@ -844,7 +848,9 @@ exports.updateServer = async (req, res) => {
             console.log('Actualizando foto para usuario_id:', usuario_id, 'nueva URL:', foto_url);
 
             // Buscar foto anterior
-            const oldFotoRes = await client.query('SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
+            const queryOldFoto = 'SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1';
+            console.log('SQL DEBUG [oldFotoRes]:', queryOldFoto, 'params:', [usuario_id]);
+            const oldFotoRes = await client.query(queryOldFoto, [usuario_id]);
 
             if (oldFotoRes.rows.length > 0) {
                 const oldFoto = oldFotoRes.rows[0].foto_url;
@@ -875,11 +881,13 @@ exports.updateServer = async (req, res) => {
                         console.log('El archivo de foto anterior no existe en el disco.');
                     }
                 }
-                console.log('Actualizando tabla fotos_usuarios...');
-                await client.query('UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2', [foto_url, usuario_id]);
+                const queryUpdateFoto = 'UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2';
+                console.log('SQL DEBUG [updateFoto]:', queryUpdateFoto, 'params:', [foto_url, usuario_id]);
+                await client.query(queryUpdateFoto, [foto_url, usuario_id]);
             } else {
-                console.log('No existía registro de foto. Insertando en fotos_usuarios...');
-                await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
+                const queryInsertFoto = 'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)';
+                console.log('SQL DEBUG [insertFoto]:', queryInsertFoto, 'params:', [usuario_id, foto_url]);
+                await client.query(queryInsertFoto, [usuario_id, foto_url]);
             }
         } else {
             console.log('No se subió nueva foto.');
@@ -1661,7 +1669,7 @@ exports.createInstitution = async (req, res) => {
         // Generar token de verificación
         const token = generateSecureToken();
         // Enviar correo de verificación
-        const verificationLink = `http://intranet.minaamp.gob.ve/verify-email?token=${token}`;
+        const verificationLink = `https://intranet.minaamp.gob.ve/verify-email?token=${token}`;
         await sendEmail(email, 'Verifica tu correo', `Haz clic en el siguiente enlace para verificar tu correo: ${verificationLink}`);
 
         await client.query('COMMIT');
@@ -1761,7 +1769,7 @@ exports.createHeadquarter = async (req, res) => {
         // Generar token de verificación
         const token = generateSecureToken();
         // Enviar correo de verificación
-        const verificationLink = `http://intranet.minaamp.gob.ve/verify-email?token=${token}`;
+        const verificationLink = `https://intranet.minaamp.gob.ve/verify-email?token=${token}`;
         await sendEmail(email, 'Verifica tu correo', `Haz clic en el siguiente enlace para verificar tu correo: ${verificationLink}`);
 
         await client.query('COMMIT');
@@ -1861,7 +1869,7 @@ exports.createArea = async (req, res) => {
         // Generar token de verificación
         const token = generateSecureToken();
         // Enviar correo de verificación
-        const verificationLink = `http://intranet.minaamp.gob.ve/verify-email?token=${token}`;
+        const verificationLink = `https://intranet.minaamp.gob.ve/verify-email?token=${token}`;
         await sendEmail(email, 'Verifica tu correo', `Haz clic en el siguiente enlace para verificar tu correo: ${verificationLink}`);
 
         await client.query('COMMIT');
@@ -2954,7 +2962,7 @@ exports.serverState = async (req, res) => {
         // Consultamos directamente la tabla maestra de estados. 
         // Basado en tu código anterior, la tabla tiene la columna 'estado_id'.
         const result = await client.query('SELECT estado_id, estado FROM estados ORDER BY estado ASC');
-        
+
         res.status(200).json(result.rows);
     } catch (err) {
         console.error('Error en serverState:', err);
