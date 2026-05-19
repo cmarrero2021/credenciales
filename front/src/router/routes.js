@@ -91,17 +91,17 @@ const routes = [
     ],
   },
 
-  {
-    path: "/inicio",
-    component: () => import("layouts/MainLayout.vue"),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: "",
-        component: () => import("pages/revistas_public/EstadisticasPage.vue"),
-      },
-    ],
-  },
+  // {
+  //   path: "/inicio",
+  //   component: () => import("layouts/MainLayout.vue"),
+  //   meta: { requiresAuth: true },
+  //   children: [
+  //     {
+  //       path: "",
+  //       component: () => import("pages/revistas_public/EstadisticasPage.vue"),
+  //     },
+  //   ],
+  // },
   // {
   //   path: "/inicio",
   //   component: () => import("layouts/MainLayout.vue"),

@@ -102,14 +102,14 @@ module.exports = configure(function (ctx) {
     // devServer: {
     //   proxy: {
     //     "/api": {
-    //       target: "http://poi-r.vps.co.ve:3000",
+    //       target: "https://poi-r.vps.co.ve:3000",
     //       changeOrigin: true,
     //       pathRewrite: {
     //         "^/api": "",
     //       },
     //     },
     //     "/auth": {
-    //       target: "http://poi-r.vps.co.ve:3001",
+    //       target: "https://poi-r.vps.co.ve:3001",
     //       changeOrigin: true,
     //       pathRewrite: {
     //         "^/auth": "",

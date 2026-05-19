@@ -28,13 +28,13 @@ import { boot } from "quasar/wrappers";
 import axios from "axios";
 import { LocalStorage } from "quasar";
 
-const urlBaseEnv = import.meta.env.VITE_API_URL || "http://credenciales.minaamp.gob.ve";
+const urlBaseEnv = import.meta.env.VITE_API_URL || "https://credenciales.minaamp.gob.ve";
 axios.defaults.baseURL = urlBaseEnv.replace(/\/+$/, '');
 
 export default boot(({ app }) => {
   axios.interceptors.request.use((config) => {
     // 💥 FILTRO NUCLEAR ANTIBARRAS 💥
-    // Si la URL tiene dobles barras (ignorando el http://), las convierte en una sola.
+    // Si la URL tiene dobles barras (ignorando el https://), las convierte en una sola.
     if (config.url) {
       config.url = config.url.replace(/(?<!:)\/{2,}/g, '/');
     }

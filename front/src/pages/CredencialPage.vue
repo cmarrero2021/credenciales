@@ -157,8 +157,8 @@ function restaurarElementos() {
   document.body.classList.remove('solo-credencial')
 }
 
-/*const backendBase = 'http://localhost:3001'*/
-const backendBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : 'http://credenciales.minaamp.gob.ve';
+/*const backendBase = 'https://localhost:3001'*/
+const backendBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : 'https://credenciales.minaamp.gob.ve';
 function getFotoUrl(url) {
   if (!url) return '/img/no_person.png'
   // Base64 embebida: devolver tal cual
@@ -213,9 +213,9 @@ function getFooterFor(item) {
   // Default to Ministerio seal
   return '/img/ministerio_sello_firma.png'
 }
-const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/+$/, '')
+const apiBase = (import.meta.env.VITE_API_URL || 'https://localhost:3001').replace(/\/+$/, '')
 axios.defaults.baseURL = apiBase
-const qrBaseUrl = import.meta.env.VITE_CREDENCIAL_QR_URL || (typeof window !== 'undefined' ? `${window.location.origin}/credencial?cedula=` : 'http://localhost:3001/credenciales/cedula=')
+const qrBaseUrl = import.meta.env.VITE_CREDENCIAL_QR_URL || (typeof window !== 'undefined' ? `${window.location.origin}/credencial?cedula=` : 'https://localhost:3001/credenciales/cedula=')
 const qrSize = 75
 const qrUrl = computed(() => {
   if (!trabajador.value || !trabajador.value.cedula) return ''
@@ -638,7 +638,7 @@ async function buscarTrabajador() {
     mostrarInfo.value = false
     console.error('Error buscarTrabajador:', err)
     const msg = (err && err.message && err.message.toLowerCase && err.message.toLowerCase().includes('network'))
-      ? 'Network Error: no se pudo conectar al servidor. Verifica que el backend esté corriendo en http://localhost:3001'
+      ? 'Network Error: no se pudo conectar al servidor. Verifica que el backend esté corriendo en https://localhost:3001'
       : 'El número de Cédula de Identidad introducido no corresponde con ningún trabajador registrado.'
     Notify.create({ type: 'negative', message: msg, position: 'center' })
   }

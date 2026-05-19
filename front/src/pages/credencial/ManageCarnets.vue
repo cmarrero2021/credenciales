@@ -203,8 +203,8 @@ const form = ref({})
 const batchDialog = ref(false)
 
 const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-/*const backendBase = 'http://localhost:3001'*/
-const backendBase = import.meta.env.VITE_API_URL.replace(/\/+$/, '') || 'http://credenciales.minaamp.gob.ve';
+/*const backendBase = 'https://localhost:3001'*/
+const backendBase = import.meta.env.VITE_API_URL.replace(/\/+$/, '') || 'https://credenciales.minaamp.gob.ve';
 
 function prepareExportData() {
   const visibleRows = filteredRows.value.filter(r => {
