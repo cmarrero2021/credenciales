@@ -23,7 +23,19 @@ const storage = multer.diskStorage({
     const mm = pad(now.getMinutes());
     const ss = pad(now.getSeconds());
     const timestamp = `${YYYY}${MM}${DD}_${HH}${mm}${ss}`;
-    const finalFilename = `${timestamp}_${cedula}.png`;
+    // Determinar extensión a partir del mimetype o del nombre original
+    const mimeToExt = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg'
+    }
+    let ext = mimeToExt[file.mimetype]
+    if (!ext) {
+      const origExt = path.extname(file.originalname || '').toLowerCase()
+      if (origExt === '.png' || origExt === '.jpg' || origExt === '.jpeg') ext = (origExt === '.jpeg') ? '.jpg' : origExt
+      else ext = '.png' // fallback
+    }
+    const finalFilename = `${timestamp}_${cedula}${ext}`;
     console.log('UPLOAD FILENAME: final filename:', finalFilename);
     cb(null, finalFilename);
   }
@@ -32,13 +44,16 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   console.log('UPLOAD FILTER: entering fileFilter function');
   console.log('UPLOAD FILTER: mimetype:', file.mimetype);
-  if (file.mimetype === 'image/png') {
+  const allowed = ['image/png', 'image/jpeg', 'image/jpg']
+  if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Solo se permiten archivos PNG'), false);
+    cb(new Error('Solo se permiten archivos PNG o JPG/JPEG'), false);
   }
 };
 
-const upload = multer({ storage, fileFilter });
+// Limitar tamaño máximo de subida a 1 MB por archivo
+const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
+const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_BYTES } });
 
 module.exports = upload;

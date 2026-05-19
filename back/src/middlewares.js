@@ -3,7 +3,18 @@ const pool = require('./db');
 
 // Middleware para autenticación
 exports.authenticate = async (req, res, next) => {
-    const token = req.header('Authorization')?.split(' ')[1];
+    // Buscar token en múltiples ubicaciones para compatibilidad con nginx
+    const authHeader = req.header('Authorization')
+        || req.header('authorization')
+        || req.header('X-Authorization')
+        || req.header('x-authorization');
+
+    const token = authHeader?.split(' ')[1] || req.header('x-access-token') || req.query.token;
+
+    // Log de diagnóstico (se puede eliminar después)
+    console.log('[AUTH] Headers recibidos:', JSON.stringify(req.headers));
+    console.log('[AUTH] Token extraído:', token ? token.substring(0, 20) + '...' : 'NINGUNO');
+
     if (!token) return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado.' });
 
     try {
@@ -19,14 +30,14 @@ exports.authenticate = async (req, res, next) => {
 
         // Validar la sesión activa
         const sessionResult = await pool.query(
-            'SELECT expires_at FROM sessions WHERE token = $1 AND is_revoked = FALSE', 
+            'SELECT expires_at FROM sessions WHERE token = $1 AND is_revoked = FALSE',
             [token]
         );
-        
+
         if (!sessionResult.rows.length) {
             return res.status(401).json({ error: 'Sesión no encontrada o revocada.' });
         }
-        
+
         const expiresAt = sessionResult.rows[0].expires_at;
         if (new Date(expiresAt) < new Date()) {
             return res.status(401).json({ error: 'Sesión expirada. Por favor, inicia sesión nuevamente.' });

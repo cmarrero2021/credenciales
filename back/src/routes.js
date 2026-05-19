@@ -114,10 +114,10 @@ router.get('/consulta_renac', readRenac);
 router.get('/adultos_estadisticas', elderStatistics);
 router.get('/adultos_estados', elderState);
 router.get('/servidores_estados', serverState)
-router.get('/auth/servidores_cargos', serverPosition);
-router.get('/auth/instituciones', listInstitutions); // Listar servidores por institución
-router.get('/auth/sedes', listHeadquarters); // Listar sedes
-router.get('/auth/areas', listAreas); // Listar areas
+router.get('/servidores_cargos', serverPosition);
+router.get('/instituciones', listInstitutions); // Listar servidores por institución
+router.get('/sedes', listHeadquarters); // Listar sedes
+router.get('/areas', listAreas); // Listar areas
 router.get('/session-settings/global', authenticate, authorize('get_global_session_settings'), getGlobalSessionTimeout);
 router.patch('/session-settings/global', authenticate, authorize('update_global_session_settings'), updateGlobalSessionTimeout);
 router.patch('/users/:userId/session-timeout', authenticate, authorize('update_user_session_timeout'), updateUserSessionTimeout);

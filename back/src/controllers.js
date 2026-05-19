@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const path = require('path');
 const pool = require('./db');
 const {
     hashPassword,
@@ -43,7 +44,14 @@ function normalizeReason(raw) {
 // ================================
 // Crear servidores
 exports.createServer = async (req, res) => {
-    const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id } = req.body;
+    const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id, condicion } = req.body;
+    
+    // Convertir IDs vacíos a null para evitar errores en Postgres
+    // Convertir IDs vacíos a null y asegurar que sean enteros para evitar errores en Postgres
+    const areaId = (area_id === '' || area_id === null || area_id === undefined) ? null : parseInt(area_id);
+    const institucionId = (institucion_id === '' || institucion_id === null || institucion_id === undefined) ? null : parseInt(institucion_id);
+    const sedeId = (sede_id === '' || sede_id === null || sede_id === undefined) ? null : parseInt(sede_id);
+    const cargoId = (cargo_id === '' || cargo_id === null || cargo_id === undefined) ? null : parseInt(cargo_id);
     const client = await pool.connect();
     const fs = require('fs');
     let fotoPath = req.file && req.file.path ? req.file.path : null;
@@ -54,8 +62,11 @@ exports.createServer = async (req, res) => {
     console.log('FotoPath:', fotoPath);
 
     try {
+        await client.query('BEGIN');
+
         const server = await client.query('SELECT cedula FROM servidores WHERE cedula = $1', [cedula]);
         if (server.rowCount > 0) {
+            await client.query('ROLLBACK');
             // Eliminar foto si fue subida
             if (fotoPath) {
                 try { fs.unlinkSync(fotoPath); } catch (e) { }
@@ -65,38 +76,44 @@ exports.createServer = async (req, res) => {
 
         // Insertar servidor
         const insertResult = await client.query(
-            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id) VALUES ($4, $5, $6, $2, $3, $1, $7) RETURNING id',
-            [area_id, institucion_id, sede_id, cedula, nombres, apellidos, cargo_id]
+            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id, condicion) VALUES ($4, $5, $6, $2, $3, $1, $7, $8) RETURNING id',
+            [areaId, institucionId, sedeId, cedula, nombres, apellidos, cargoId, condicion || 'ACTIVO']
         );
 
-        console.log('Servidor insertado con ID:', insertResult.rows[0]?.id);
+        const servidor_id = insertResult.rows[0]?.id;
+        console.log('Servidor insertado con ID:', servidor_id);
 
         // Si hay archivo de foto
-        if (fotoPath) {
+        if (fotoPath && servidor_id) {
             console.log('Procesando foto...');
-            // Buscar el usuario_id por la cédula
-            const userRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
-            console.log('Usuario encontrado:', userRes.rows);
+            const foto_url = fotoPath.replace(/\\/g, '/');
+            console.log('Insertando foto - usuario_id:', servidor_id, 'foto_url:', foto_url);
 
-            if (userRes.rows.length > 0) {
-                const usuario_id = userRes.rows[0].id;
-                const foto_url = fotoPath.replace(/\\/g, '/');
-                console.log('Insertando foto - usuario_id:', usuario_id, 'foto_url:', foto_url);
-
-                const fotoInsert = await client.query(
-                    'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2) RETURNING id',
-                    [usuario_id, foto_url]
+            // Verificar si ya existe entrada en fotos_usuarios para evitar conflicto de unicidad
+            const existingFoto = await client.query(
+                'SELECT id FROM fotos_usuarios WHERE usuario_id = $1', [servidor_id]
+            );
+            if (existingFoto.rows.length > 0) {
+                await client.query(
+                    'UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2',
+                    [foto_url, servidor_id]
                 );
-                console.log('Foto insertada con ID:', fotoInsert.rows[0]?.id);
+                console.log('Foto ACTUALIZADA para usuario_id:', servidor_id);
             } else {
-                console.log('ERROR: No se encontró el usuario recién creado');
+                await client.query(
+                    'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)',
+                    [servidor_id, foto_url]
+                );
+                console.log('Foto INSERTADA para usuario_id:', servidor_id);
             }
         } else {
-            console.log('No hay foto para procesar');
+            console.log('No hay foto para procesar.');
         }
 
+        await client.query('COMMIT');
         res.status(200).json({ message: 'Servidor creado exitosamente.' });
     } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
         console.error('ERROR en createServer:', err);
         // Eliminar foto si fue subida y ocurre cualquier error
         if (fotoPath) {
@@ -107,6 +124,7 @@ exports.createServer = async (req, res) => {
         client.release();
     }
 };
+
 // Listar histórico de impresiones
 exports.listCredentialHistory = async (req, res) => {
     const client = await pool.connect();
@@ -115,7 +133,18 @@ exports.listCredentialHistory = async (req, res) => {
         try {
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS printed_by integer");
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS disabled_by integer");
-            await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS reimpreso_de integer");
+            // Ensure `reimpreso_de` is a UUID referencing historico.id — if it exists with wrong type, replace it
+            await client.query(`DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'historico' AND column_name = 'reimpreso_de' AND data_type <> 'uuid') THEN
+                    ALTER TABLE historico DROP COLUMN reimpreso_de;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'historico' AND column_name = 'reimpreso_de') THEN
+                    ALTER TABLE historico ADD COLUMN reimpreso_de uuid;
+                END IF;
+            END$$;`);
+            await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS motivo_deshabilitado text");
+            await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS fecha_deshabilitado timestamptz");
         } catch (e) { console.warn('No se pudo asegurar columnas:', e && e.message) }
         
         let result = await client.query(`
@@ -196,12 +225,20 @@ exports.listServers = async (req, res) => {
         //     LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
         //     ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
         // `);
+        // Garantizar existencia de columna condicion y permitir nulos en area/cargo para jubilados
+        try {
+            await client.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS condicion VARCHAR(50) DEFAULT 'ACTIVO'");
+            await client.query("ALTER TABLE servidores ALTER COLUMN area_id DROP NOT NULL");
+            await client.query("ALTER TABLE servidores ALTER COLUMN cargo_id DROP NOT NULL");
+        } catch (e) { console.warn('No se pudo asegurar columnas o restricciones:', e && e.message) }
+
         const result = await client.query(`
             SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
                    a.nombres || ' ' || a.apellidos as nombres, a.cargo_id, a.cargo,
-                   f.foto_url
+                   f.foto_url, s.condicion
             FROM vservidores a
             LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
+            LEFT JOIN servidores s ON s.id = a.id
             ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
         `);
         // Verificar existencia física de la foto y asignar imagen por defecto si no existe
@@ -233,10 +270,10 @@ exports.listServers = async (req, res) => {
                         const mime = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
                         final_url = `data:${mime};base64,${imgBuffer.toString('base64')}`;
                     } catch(e) {
-                        final_url = `/uploads/${nombreFoto}`;
+                        final_url = defaultFoto;
                     }
                 } else {
-                    final_url = `/uploads/${nombreFoto}`;
+                    final_url = defaultFoto;
                 }
             }
             return { ...row, foto_url: final_url };
@@ -282,9 +319,10 @@ exports.getCredencial = async (req, res) => {
     try {
         // Buscar datos del servidor y foto
         const result = await client.query(`
-            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.abreviacion, s.cargo_id, s.cargo, s.nivel, f.foto_url
+            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.abreviacion, s.cargo_id, s.cargo, s.nivel, f.foto_url, ss.condicion
             FROM vservidores s
             LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
+            LEFT JOIN servidores ss ON ss.cedula = s.cedula
             WHERE s.cedula = $1
         `, [cedula]);
         if (result.rows.length === 0) {
@@ -322,12 +360,12 @@ exports.getCredencial = async (req, res) => {
                     const mime = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
                     final_url = `data:${mime};base64,${imgBuffer.toString('base64')}`;
                 } catch(e) {
-                    console.warn('[getCredencial] No se pudo leer imagen, usando URL:', e.message);
-                    final_url = `/uploads/${nombreFoto}`;
+                    console.warn('[getCredencial] No se pudo leer imagen, usando default:', e.message);
+                    final_url = '/img/no_person.png';
                 }
             } else {
                 console.warn('[getCredencial] Archivo no encontrado en disco:', foto_url);
-                final_url = `/uploads/${nombreFoto}`;
+                final_url = '/img/no_person.png';
             }
         }
         // Determinar estado del trabajador (servidores.activo) y motivo si existe
@@ -373,7 +411,8 @@ exports.getCredencial = async (req, res) => {
             activo: (carnetActivo === null) ? true : carnetActivo,
             trabajador_activo: (servidorActivo === null) ? true : servidorActivo,
             disable_reason: histDisableReason || disableReason,
-            disabled_at: histDisabledAt || null
+            disabled_at: histDisabledAt || null,
+            condicion: row.condicion || 'ACTIVO'
         });
     } catch (err) {
         res.status(500).json({ error: 'Error al buscar la credencial.' });
@@ -469,6 +508,11 @@ exports.getCredencialPage = async (req, res) => {
             qrSrc = `https://chart.googleapis.com/chart?chs=220x220&cht=qr&chl=${encodeURIComponent(pageUrl)}`;
         }
 
+        // Determinar sello según la institución
+        const institucionName = (row.institucion || '').toString();
+        const isInass = /INSTITUTO NACIONAL DE LOS SERVICIOS SOCIALES/i.test(institucionName);
+        const selloImg = isInass ? '/img/inass_sello_firma.png' : '/img/ministerio_sello_firma.png';
+
         const html = `<!doctype html>
                 <html>
                     <head>
@@ -518,6 +562,12 @@ exports.getCredencialPage = async (req, res) => {
                                 </div>
                                 <div class="info-right">
                                     <img src="${final_url}" class="photo" alt="Foto de ${row.nombres} ${row.apellidos}" />
+                                    <div style="margin-top:10px">
+                                        <img src="${selloImg}" alt="Sello" style="width:110px;height:100px;object-fit:contain;display:block;margin:6px auto;filter:brightness(0.8) contrast(1.2)" />
+                                    </div>
+                                    <div style="margin-top:8px">
+                                        <img src="${qrSrc}" alt="QR" style="width:120px;height:120px;object-fit:contain;border:1px solid #e6eef6;border-radius:6px;display:block;margin:6px auto;background:#fff;padding:6px" />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -607,8 +657,9 @@ exports.saveCredentialPrint = async (req, res) => {
         // marcar la última entrada como anulada por reimpresión (motivo + fecha) y dejarla no vigente.
         console.log(`[SAVE_CREDENTIAL_PRINT] Verificando histórico previo para cédula: ${cedula}`);
         const lastHistRes = await client.query('SELECT id, vigente FROM historico WHERE cedula = $1 ORDER BY created_at DESC LIMIT 1', [cedula]);
+        let last = null;
         if (lastHistRes.rows.length) {
-            const last = lastHistRes.rows[0];
+            last = lastHistRes.rows[0];
             // Comprobar estado actual del servidor (activo/inactivo)
             let servidorActivoFlag = true;
             try {
@@ -618,7 +669,7 @@ exports.saveCredentialPrint = async (req, res) => {
                 console.warn('[SAVE_CREDENTIAL_PRINT] No se pudo obtener estado activo del servidor:', e && e.message ? e.message : e);
             }
 
-            if (last.vigente && servidorActivoFlag) {
+            if (last && last.vigente && servidorActivoFlag) {
                 console.log('[SAVE_CREDENTIAL_PRINT] Último historico vigente encontrado y servidor activo: anulando por reimpresión');
                 // Anular la entrada anterior indicando que fue anulada por reimpresión
                 await client.query(`UPDATE historico SET vigente = false, motivo_deshabilitado = COALESCE(motivo_deshabilitado, '') || $2, fecha_deshabilitado = NOW() WHERE id = $1`, [last.id, ' Anulado por Reimpresion']);
@@ -637,7 +688,15 @@ exports.saveCredentialPrint = async (req, res) => {
         // Asegurarse que las columnas opcionales existen (opcional)
         try {
             await client.query(`ALTER TABLE historico ADD COLUMN IF NOT EXISTS printed_by integer`);
-            await client.query(`ALTER TABLE historico ADD COLUMN IF NOT EXISTS reimpreso_de integer`);
+            await client.query(`DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'historico' AND column_name = 'reimpreso_de' AND data_type <> 'uuid') THEN
+                    ALTER TABLE historico DROP COLUMN reimpreso_de;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'historico' AND column_name = 'reimpreso_de') THEN
+                    ALTER TABLE historico ADD COLUMN reimpreso_de uuid;
+                END IF;
+            END$$;`);
             console.log('[SAVE_CREDENTIAL_PRINT] Columnas printed_by y reimpreso_de verificadas/creadas.');
         } catch (e) {
             console.warn('No se pudo asegurar columnas opcionales en historico:', e.message);
@@ -674,9 +733,10 @@ exports.saveCredentialPrint = async (req, res) => {
             apellidos: servidor.apellidos
         });
     } catch (err) {
-        console.error('[SAVE_CREDENTIAL_PRINT] Error, revirtiendo transacción.', err);
+        console.error('[SAVE_CREDENTIAL_PRINT] Error, revirtiendo transacción.', err && err.stack ? err.stack : err);
         await client.query('ROLLBACK');
-        console.error('Error al guardar histórico de impresión:', err);
+        console.error('Error al guardar histórico de impresión:', err && err.stack ? err.stack : err);
+        // Responder sin exponer detalles internos en producción
         res.status(500).json({ error: 'Error al guardar el histórico de impresión.' });
     } finally {
         console.log('[SAVE_CREDENTIAL_PRINT] Liberando cliente.');
@@ -703,71 +763,92 @@ exports.seekServer = async (req, res) => {
 };
 exports.updateServer = async (req, res) => {
     const { cedula } = req.params;
-    const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id } = req.body;
+    const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id, condicion } = req.body;
     const client = await pool.connect();
     const fs = require('fs');
     let fotoPath = req.file && req.file.path ? req.file.path : null;
 
+    console.log('=== UPDATE SERVER DEBUG ===');
+    console.log('Params:', req.params);
+    console.log('Body:', req.body);
+    console.log('File:', req.file);
+    console.log('FotoPath:', fotoPath);
+
     try {
+        await client.query('BEGIN');
+
+        // 1. Verificar si el servidor existe
         const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
         if (existsRes.rows.length === 0) {
-            if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) { console.error('Error unlinking file on failed update:', e); } }
+            console.log('Cédula no encontrada:', cedula);
+            await client.query('ROLLBACK');
+            if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) { } }
             return res.status(404).json({ error: 'La cédula no existe.' });
         }
 
         const usuario_id = existsRes.rows[0].id;
+        console.log('Usuario ID encontrado:', usuario_id);
 
         const updates = [];
         const values = [];
 
+        // Helper para procesar IDs numéricos o null (FormData envía todo como string)
+        const parseId = (val) => (val === '' || val === null || val === undefined || val === 'null' || val === 'undefined') ? null : parseInt(val);
+
         if (area_id !== undefined) {
+            const val = parseId(area_id);
             updates.push(`area_id = $${values.length + 1}`);
-            values.push(parseInt(area_id));
+            values.push(isNaN(val) ? null : val);
         }
         if (institucion_id !== undefined) {
+            const val = parseId(institucion_id);
             updates.push(`institucion_id = $${values.length + 1}`);
-            values.push(parseInt(institucion_id));
+            values.push(isNaN(val) ? null : val);
         }
         if (sede_id !== undefined) {
+            const val = parseId(sede_id);
             updates.push(`sede_id = $${values.length + 1}`);
-            values.push(parseInt(sede_id));
+            values.push(isNaN(val) ? null : val);
         }
         if (cargo_id !== undefined) {
+            const val = parseId(cargo_id);
             updates.push(`cargo_id = $${values.length + 1}`);
-            values.push(parseInt(cargo_id));
+            values.push(isNaN(val) ? null : val);
         }
         if (nombres !== undefined) {
             updates.push(`nombres = $${values.length + 1}`);
-            values.push(nombres);
+            values.push(nombres.toUpperCase());
         }
         if (apellidos !== undefined) {
             updates.push(`apellidos = $${values.length + 1}`);
-            values.push(apellidos);
+            values.push(apellidos.toUpperCase());
+        }
+        if (condicion !== undefined) {
+            updates.push(`condicion = $${values.length + 1}`);
+            values.push(condicion);
         }
 
-        if (updates.length === 0 && !fotoPath) {
-            return res.status(400).json({ error: 'No hay campos para actualizar.' });
-        }
-
+        // 2. Actualizar tabla servidores si hay cambios
         if (updates.length > 0) {
             const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length + 1}`;
             const queryValues = [...values, cedula];
-
-            const updateRes = await client.query(query, queryValues);
-
-            if (updateRes.rowCount === 0) {
-                if (fotoPath) { try { fs.unlinkSync(fotoPath); } catch (e) { console.error('Error unlinking file on failed update:', e); } }
-                return res.status(400).json({ error: 'No se actualizó ningún registro.' });
-            }
+            console.log('Ejecutando update servidores:', query, queryValues);
+            await client.query(query, queryValues);
+        } else {
+            console.log('No hay cambios en campos de texto para servidores.');
         }
 
+        // 3. Procesar foto si se subió una nueva
         if (fotoPath) {
             const foto_url = fotoPath.replace(/\\/g, '/');
+            console.log('Actualizando foto para usuario_id:', usuario_id, 'nueva URL:', foto_url);
 
+            // Buscar foto anterior
             const oldFotoRes = await client.query('SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1', [usuario_id]);
 
             if (oldFotoRes.rows.length > 0) {
                 const oldFoto = oldFotoRes.rows[0].foto_url;
+                console.log('Foto anterior encontrada en DB:', oldFoto);
                 if (oldFoto) {
                     const nombreOldFoto = oldFoto.replace(/\\/g, '/').split('/').pop();
                     const uploadsDir = path.join(__dirname, '../uploads');
@@ -776,36 +857,50 @@ exports.updateServer = async (req, res) => {
                         if (fs.existsSync(uploadsDir)) {
                             const files = fs.readdirSync(uploadsDir);
                             const fileMatch = files.find(f => f.toLowerCase() === nombreOldFoto.toLowerCase());
-                            if (fileMatch) {
-                                realOldPath = path.join(uploadsDir, fileMatch);
-                            }
+                            if (fileMatch) realOldPath = path.join(uploadsDir, fileMatch);
                         }
-                    } catch(e) {}
+                    } catch (e) { console.error('Error buscando archivo antiguo:', e); }
+
                     if (!realOldPath) realOldPath = path.join(uploadsDir, nombreOldFoto);
 
+                    console.log('Intentando eliminar archivo físico:', realOldPath);
                     if (fs.existsSync(realOldPath)) {
                         try {
                             fs.unlinkSync(realOldPath);
+                            console.log('Foto anterior eliminada del disco.');
                         } catch (e) {
-                            console.error('Error al eliminar foto anterior:', e);
+                            console.error('Error al eliminar foto anterior (posiblemente abierta por otro proceso):', e);
                         }
+                    } else {
+                        console.log('El archivo de foto anterior no existe en el disco.');
                     }
                 }
+                console.log('Actualizando tabla fotos_usuarios...');
                 await client.query('UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2', [foto_url, usuario_id]);
             } else {
+                console.log('No existía registro de foto. Insertando en fotos_usuarios...');
                 await client.query('INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)', [usuario_id, foto_url]);
             }
+        } else {
+            console.log('No se subió nueva foto.');
         }
 
+        await client.query('COMMIT');
+        console.log('Transacción completada exitosamente.');
         res.status(200).json({ message: 'Servidor actualizado exitosamente.' });
     } catch (err) {
-        console.error('ERROR en updateServer:', err);
+        if (client) await client.query('ROLLBACK');
+        console.error('ERROR CRÍTICO en updateServer:', err);
         if (fotoPath) {
-            try { fs.unlinkSync(fotoPath); } catch (e) { console.error('Error unlinking file on error:', e); }
+            try { fs.unlinkSync(fotoPath); console.log('Archivo temporal eliminado tras fallo.'); } catch (e) { console.error('Error eliminando archivo temporal tras fallo:', e); }
         }
-        res.status(500).json({ error: 'Error al actualizar el servidor.', details: err.message });
+        res.status(500).json({
+            error: 'Error al actualizar el servidor.',
+            details: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     } finally {
-        client.release();
+        if (client) client.release();
     }
 };
 // Actualización masiva de la hora del voto de los servidores
@@ -2579,7 +2674,7 @@ exports.login = async (req, res) => {
             [user.id, username, ip, 'success', token]
         );
         console.log('✅ Registrando login exitoso...');
-        res.status(200).json({ message: 'Inicio de sesión exitoso.', token, permissions });
+        res.status(200).json({ success: true, message: 'Inicio de sesión exitoso.', token, permissions });
     } catch (err) {
         console.error('❌ Error en login:', err && err.message ? err.message : err);
         console.error('🔍 Detalles del error:', err && err.stack ? err.stack : 'no stack');

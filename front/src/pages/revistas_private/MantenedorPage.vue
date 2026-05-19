@@ -190,11 +190,15 @@
               </div>
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.area" :options="optionsu.area" label="Adscripción" filled
-                  option-label="label" option-value="value" />
+                  option-label="label" option-value="value" :disable="editForm.condicion === 'JUBILADO'" />
               </div>
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled option-label="label"
-                  option-value="value" />
+                  option-value="value" :disable="editForm.condicion === 'JUBILADO'" />
+              </div>
+              <div class="col-12 col-md-6">
+                <q-select v-model="editForm.condicion" :options="condicionOptions" label="Condición" filled
+                  emit-value map-options />
               </div>
               <!-- Campo para subir foto PNG y previsualización -->
               <div class="col-12">
@@ -274,15 +278,22 @@ const columns = [
   { name: 'sede', label: 'Sede', field: 'sede', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'area', label: 'Adscripción', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
-
+  { name: 'condicion', label: 'Condición', field: 'condicion', sortable: true, filterable: true, align: 'left', type: 'text' },
 ];
-// Función para obtener la URL de la foto (soporta rutas locales y absolutas)
+// Función para obtener la URL de la foto
+// Soporta base64 (data:image/...) devuelto por el backend en producción,
+// rutas /uploads/... y URLs absolutas.
+// El avatar por defecto se sirve desde los estáticos del FRONTEND (/img/no_person.png),
+// sin apiBase, para que nginx lo entregue directamente sin proxear al backend.
+const DEFAULT_AVATAR = '/img/no_person.png';
 const apiBase = import.meta.env.VITE_API_URL || '';
 const getFotoUrl = (foto_url) => {
-  if (!foto_url) return apiBase + '/img/no_person.png';
+  if (!foto_url) return DEFAULT_AVATAR;
+  // Base64 embebida: devolver tal cual (evita segunda petición HTTP)
+  if (foto_url.startsWith('data:image/')) return foto_url;
   const normalized = foto_url.replace(/\\/g, '/');
   if (normalized.includes('no_person.png')) {
-    return apiBase + '/img/no_person.png';
+    return DEFAULT_AVATAR;
   }
   if (normalized.includes('/uploads/')) {
     return apiBase + normalized;
@@ -290,8 +301,8 @@ const getFotoUrl = (foto_url) => {
   if (normalized.startsWith('uploads/')) {
     return apiBase + '/' + normalized;
   }
-  // Fallback
-  return apiBase + '/img/no_person.png';
+  // Fallback: avatar por defecto desde el frontend
+  return DEFAULT_AVATAR;
 };
 
 // Columnas para el modo edición rápida
@@ -403,7 +414,7 @@ async function printBatchServidores(size = null) {
       const group = groups[gi]
       const html = []
       html.push('<!doctype html><html><head><meta charset="utf-8"><title>Impresión masiva</title>')
-      html.push('<style>body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:8px} .sheet{display:flex;flex-wrap:wrap;gap:8px} .cred{width:55mm;height:85mm;box-sizing:border-box;border:0;margin:0;padding:0} .fondo{position:relative;width:55mm;height:85mm;overflow:hidden} .foto{position:absolute;right:8mm;top:18mm;width:19mm;height:19mm;object-fit:cover;border-radius:3mm;border:1px solid #888} .nombre{position:absolute;top:36mm;width:100%;text-align:center;font-size:4mm;font-weight:700} .cedula{position:absolute;top:40mm;width:100%;text-align:center;font-size:5.6mm;font-weight:700} .cargo{position:absolute;top:48mm;width:100%;text-align:center;font-size:3.2mm} .back{width:55mm;height:85mm;padding:4mm;box-sizing:border-box} .qr{position:absolute;right:6mm;bottom:6mm;width:18mm;height:18mm} @media print{ .cred{page-break-inside:avoid} }</style>')
+      html.push('<style>body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:8px} .sheet{display:flex;flex-wrap:wrap;gap:8px} .cred{width:55mm;height:85mm;box-sizing:border-box;border:0;margin:0;padding:0} .fondo{position:relative;width:55mm;height:85mm;overflow:hidden} .foto{position:absolute;right:8mm;top:18mm;width:19mm;height:19mm;object-fit:cover;border-radius:3mm;border:1px solid #888} .nombre{position:absolute;top:36mm;width:100%;text-align:center;font-size:4mm;font-weight:700} .cedula{position:absolute;top:40mm;width:100%;text-align:center;font-size:5.6mm;font-weight:700} .cargo{position:absolute;top:48mm;width:100%;text-align:center;font-size:3.2mm} .back{width:55mm;height:85mm;padding:4mm;box-sizing:border-box} .qr{position:absolute;right:6mm;bottom:6mm;width:18mm;height:18mm} @media print{ .cred{page-break-inside:avoid} /* Rotar la cara trasera 180° sólo al imprimir para compensar el volteo del papel en duplex */ .cred .back{transform:rotate(180deg);transform-origin:50% 50%;display:block} .cred .back *{transform:none !important;} }</style>')
       html.push('</head><body>')
       html.push('<div class="sheet">')
       for (const r of group) {
@@ -425,7 +436,8 @@ async function printBatchServidores(size = null) {
         html.push('</div></div>')
 
         // Trasera
-        html.push(`<div class="cred"><div class="back"><div style="font-size:2.3mm;color:#2c3e50">• Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</div><div style="position:relative;height:100%"><img class="qr" src="${qrImg}" /></div></div></div>`)
+        const footerImg = getFooterFor_item(r)
+        html.push(`<div class="cred"><div class="back"><div style="font-size:2.3mm;color:#2c3e50">• Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</div><div style="position:relative;height:100%"><img src="${footerImg}" style="width:110px;height:100px;object-fit:contain;margin-left:-4mm;margin-top:-1.5mm;max-width:90px;max-height:90px;" /><img class="qr" src="${qrImg}" /></div></div></div>`)
       }
       html.push('</div></body></html>')
 
@@ -627,6 +639,8 @@ async function generatePdfBatch(size = null) {
     display: block !important;
     visibility: visible !important;
   }
+  /* Rotar la cara trasera sólo en impresión física para compensar el volteo duplex */
+  .credencial-trasera { transform: rotate(180deg); transform-origin: 50% 50%; }
 }
   `;
 
@@ -662,7 +676,7 @@ async function generatePdfBatch(size = null) {
               <p class="parrafo-trasero"><span class="bullet">•</span> Se agradece a todas las autoridades Civiles y Militares prestarle la mayor colaboración posible al portador de esta credencial, dentro de las normas legales</p>
             </div>
             <div class="footer-container">
-              <img src="/img/sello.png" alt="Sello" class="sello-img" />
+              <img src="${getFooterFor_item(r)}" alt="Sello" class="sello-img" />
               <img class="qr-code" src="${qrImgUrl}" />
             </div>
           </div>
@@ -725,7 +739,8 @@ const openEditModal = (row) => {
     institucion: optionsu.value.institucion.find(opt => opt.value === row.institucion_id) || null,
     sede: optionsu.value.sede.find(opt => opt.value === row.sede_id) || null,
     area: optionsu.value.area.find(opt => opt.value === row.area_id) || null,
-    cargo: optionsu.value.cargo.find(opt => opt.value === row.cargo_id) || null
+    cargo: optionsu.value.cargo.find(opt => opt.value === row.cargo_id) || null,
+    condicion: row.condicion || 'ACTIVO'
   };
   // Si hay foto, mostrar la previsualización
   fotoPreview.value = row.foto_url ? getFotoUrl(row.foto_url) : null;
@@ -742,7 +757,7 @@ const closeEditModal = () => {
 // Función para abrir el modal para agregar un nuevo servidor
 const openNewModal = () => {
   isEditing.value = false;
-  editForm.value = {};
+  editForm.value = { condicion: 'ACTIVO' };
   fotoPreview.value = null;
   editDialog.value = true;
 };
@@ -778,6 +793,52 @@ const fetchServers = async () => {
     loading.value = false;
   }
 };
+
+const isINASS = computed(() => {
+  if (!editForm.value.institucion) return false;
+  const name = editForm.value.institucion.label || '';
+  return /INSTITUTO NACIONAL DE LOS SERVICIOS SOCIALES/i.test(name);
+});
+
+const isINASS_item = (item) => {
+  if (!item) return false;
+  const name = (item.institucion || item.institucion_nombre || '').toString();
+  return /INSTITUTO NACIONAL DE LOS SERVICIOS SOCIALES/i.test(name);
+};
+
+const getFooterFor_item = (item) => {
+  if (isINASS_item(item)) {
+    return '/img/inass_sello_firma.png';
+  }
+  return '/img/ministerio_sello_firma.png';
+};
+
+const condicionOptions = computed(() => {
+  const isMinistry = editForm.value.institucion && /MINISTERIO DEL PODER POPULAR PARA LOS ADULTOS/i.test(editForm.value.institucion.label || '');
+  return [
+    { label: 'ACTIVO', value: 'ACTIVO' },
+    { label: 'JUBILADO', value: 'JUBILADO', disable: !!isMinistry }
+  ];
+});
+
+watch(() => editForm.value.institucion, (newInst) => {
+  if (newInst && /MINISTERIO DEL PODER POPULAR PARA LOS ADULTOS/i.test(newInst.label || '')) {
+    if (editForm.value.condicion === 'JUBILADO') {
+      editForm.value.condicion = 'ACTIVO';
+      Notify.create({
+        type: 'warning',
+        message: 'La opción Jubilado no está permitida para el Ministerio.'
+      });
+    }
+  }
+});
+
+watch(() => editForm.value.condicion, (newVal) => {
+  if (newVal === 'JUBILADO') {
+    editForm.value.area = null;
+    editForm.value.cargo = null;
+  }
+});
 
 // Función para obtener las opciones de los filtros
 const fetchOptions = async () => {
@@ -908,15 +969,22 @@ const saveChanges = async () => {
     formData.append('cedula', editForm.value.cedula);
     formData.append('nombres', editForm.value.nombres?.toUpperCase() ?? '');
     formData.append('apellidos', editForm.value.apellidos?.toUpperCase() ?? '');
-
-
+    formData.append('condicion', editForm.value.condicion || 'ACTIVO');
 
     if (editForm.value.foto) {
       formData.append('foto', editForm.value.foto);
     }
+
+    // Leer el token del LocalStorage para incluirlo en el header Authorization
+    const token = LocalStorage.getItem('token');
+    const authHeaders = {
+      'Content-Type': 'multipart/form-data',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+
     if (isEditing.value) {
       await axios.patch(`${updateServerURL}${editForm.value.cedula}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: authHeaders
       });
       Notify.create({
         type: 'positive',
@@ -924,7 +992,7 @@ const saveChanges = async () => {
       });
     } else {
       await axios.post(insertServerURL, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: authHeaders
       });
       Notify.create({
         type: 'positive',
@@ -973,7 +1041,10 @@ const saveQuickEdit = async (row) => {
       observaciones: editingRowData.value.observaciones?.toUpperCase() ?? ''
     };
 
-    await axios.patch(`${updateServerURL}${row.cedula}`, servidorData);
+    const token = LocalStorage.getItem('token');
+    await axios.patch(`${updateServerURL}${row.cedula}`, servidorData, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
 
     Notify.create({
       type: 'positive',
@@ -1022,7 +1093,10 @@ const eliminarServidor = async (servidor) => {
 
     // Realizar la solicitud PATCH para borrado lógico
     loading.value = true;
-    await axios.patch(`${deleteServerURL}${servidor.cedula}`);
+    const token = LocalStorage.getItem('token');
+    await axios.patch(`${deleteServerURL}${servidor.cedula}`, {}, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
 
     Notify.create({
       type: 'positive',

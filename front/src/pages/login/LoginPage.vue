@@ -71,7 +71,7 @@ const handleLogin = async () => {
       }
     }
     );
-    if (response.data.message === "Inicio de sesión exitoso.") {
+    if (response.data.token || response.data.success === true) {
       // Almacenar token y permisos en LocalStorage (opcional)
       LocalStorage.set('token', response.data.token);
       // Normalizar permisos: pueden venir como strings o como objetos { name: string }

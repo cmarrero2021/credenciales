@@ -35,7 +35,12 @@
           <div class="cedula">{{ trabajador.cedula }}</div>
           <div class="cargo">{{ trabajador.cargo }}</div>
         </div>
-        <div :class="['franja' + trabajador.nivel, isWideFranja(trabajador) ? 'franja-w' : '']">{{ trabajador.abreviacion }}</div>
+        <div :class="[
+          trabajador.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + trabajador.nivel,
+          isWideFranja(trabajador) ? 'franja-w' : ''
+        ]">
+          {{ trabajador.condicion === 'JUBILADO' ? 'JUBILADO' : trabajador.abreviacion }}
+        </div>
       </div>
 
         
@@ -63,7 +68,7 @@
             </p>
           </div>
           <div class="footer-container">
-            <img src="/img/sello.png" alt="Sello" class="sello-img" />
+            <img :src="getFooterFor(trabajador)" alt="Sello" class="sello-img" />
             <QrcodeVue :value="qrUrl" :size="qrSize" level="H" class="qr-code" />
           </div>
               </div>
@@ -87,6 +92,7 @@
         <div><b>Institución:</b> {{ trabajador.institucion || trabajador.institucion }}</div>
         <div><b>Unidad Adscripción:</b> {{ trabajador.area || trabajador.area }}</div>
         <div><b>Cargo:</b> {{ trabajador.cargo }}</div>
+        <div v-if="trabajador.condicion"><b>Condición:</b> {{ trabajador.condicion }}</div>
         <div v-if="trabajador?.disable_reason" class="q-mt-sm"><b>Inhabilitado por:</b> {{ trabajador.disable_reason }}</div>
       </div>
     </div>
@@ -154,9 +160,15 @@ function restaurarElementos() {
 /*const backendBase = 'http://localhost:3001'*/
 const backendBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : 'http://credenciales.minaamp.gob.ve';
 function getFotoUrl(url) {
-  if (!url) return ''
-  if (url.startsWith('/uploads') || url.startsWith('/img')) {
+  if (!url) return '/img/no_person.png'
+  // Base64 embebida: devolver tal cual
+  if (url.startsWith('data:image/')) return url
+  if (url.startsWith('/uploads')) {
     return backendBase + url
+  }
+  if (url.includes('no_person.png') || url.startsWith('/img')) {
+    // Servir desde el frontend (nginx lo entrega sin proxear al backend)
+    return '/img/no_person.png'
   }
   return url
 }
@@ -195,8 +207,11 @@ function isWideFranja(item) {
 }
 
 function getFooterFor(item) {
-  // Use the same sello for INASS as for the Ministerio
-  return '/img/sello.png'
+  if (isINASS(item)) {
+    return '/img/inass_sello_firma.png'
+  }
+  // Default to Ministerio seal
+  return '/img/ministerio_sello_firma.png'
 }
 const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/+$/, '')
 axios.defaults.baseURL = apiBase
@@ -423,10 +438,12 @@ function buildCredentialHtml(item) {
           <div class="cargo">${cargo}</div>
         </div>
         
-        <div class="franja${nivel}${isWideFranja(item) ? ' franja-w' : ''}">${franjaText}</div>
+        <div class="${item.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + nivel}${isWideFranja(item) ? ' franja-w' : ''}">
+          ${item.condicion === 'JUBILADO' ? 'JUBILADO' : franjaText}
+        </div>
       </div>
     </div>
-    <div class="print-page">
+    <div class="print-page print-page-back">
       <div class="credencial-preview credencial-trasera">
         <div class="contenido-trasero">
           <div class="texto-trasero">
@@ -476,6 +493,20 @@ function openPrintWindow(html) {
       overflow: hidden; 
       position: relative;
     }
+    /* La página trasera se imprime con la misma orientación que la delantera */
+    .print-page-back {
+      /* sin rotación */
+    }
+    @media print {
+      .print-page-back {
+        /* Rotar la cara trasera 180° sólo al imprimir para compensar el volteo del papel en duplex */
+        transform: rotate(180deg);
+        transform-origin: 50% 50%;
+        display: block;
+      }
+      /* Asegurar que los contenidos internos no reciban transform adicionales inesperados */
+      .print-page-back * { transform: none !important; }
+    }
     .credencial-preview { 
       width: 55mm; height: 85mm; position: relative; background: transparent; margin: 0; 
       font-family: 'Georama', sans-serif; overflow: hidden; border: none; box-shadow: none; 
@@ -494,6 +525,7 @@ function openPrintWindow(html) {
     .franja1 { background-color: #ffde00; color: rgba(0,0,0,1); }
     .franja2 { background-color: rgb(99, 146, 248); color: #f8f8f8; }
     .franja3 { background-color: rgb(248, 99, 99); color: #f8f8f8; }
+    .franja-jubilado { background-color: #0000FF !important; color: #FFFFFF !important; position: absolute; top: 60mm; left: 0; width: 55mm; text-align: center; font-size: 5.6mm; font-weight: 700; z-index: 3; }
     .franja-w { height: 9mm; line-height: 9mm; padding-top: 0; padding-bottom: 0; font-size: 8mm; font-weight: 800; top: 58.5mm; }
     
     .credencial-trasera { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
@@ -502,7 +534,7 @@ function openPrintWindow(html) {
     .parrafo-trasero { margin: 0; padding: 0 1mm; font-size: 2.3mm; line-height: 1.3; color: #2c3e50; text-align: justify; display: flex; align-items: flex-start; overflow-wrap: break-word; }
     .bullet { font-weight: 700; margin-right: 1.2mm; color: #34495e; font-size: 2.5mm; }
     .footer-container { display:flex; justify-content: space-between; align-items:flex-start; padding-top:1.5mm; gap:2mm; }
-    .sello-img { width:110px; height:100px; object-fit:contain; margin-left:-4mm; margin-top:-1.5mm; max-width: 90px; max-height: 90px; }
+    .sello-img { width:110px; height:100px; object-fit:contain; margin-left:-4mm; margin-top:-1.5mm; max-width: 90px; max-height: 90px; filter: brightness(0.6) contrast(1.4); }
     .qr-code { background:white; padding:1mm; border-radius:2mm; width:24mm; height:24mm; object-fit:contain; display:block; transform: none !important; box-shadow: none; border: 1px solid #ccc; }
     .qr-code img { width:100%; height:100%; object-fit:contain; }
     
@@ -844,6 +876,19 @@ async function bgReportPrint(cedulaStr) {
   top: 59mm;
   color:#f8f8f8;
   background-color: rgb(248, 99, 99);
+  left: 0;
+  width: 55mm;
+  text-align: center;
+  font-size: 5.6mm;
+  font-family: 'Georama', sans-serif;
+  font-weight: 700;
+  z-index: 3;
+}
+.franja-jubilado {
+  position: absolute;
+  top: 59mm;
+  color:#FFFFFF;
+  background-color: #0000FF;
   left: 0;
   width: 55mm;
   text-align: center;

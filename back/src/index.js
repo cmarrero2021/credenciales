@@ -1,10 +1,17 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+// Load dotenv if available, but don't crash if it's missing on the server.
+let dotenv;
+try {
+    dotenv = require('dotenv');
+    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+} catch (err) {
+    console.warn('Warning: dotenv not installed. Run `npm ci` in the back/ folder to install dependencies.');
+}
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
 const routes = require('./routes');
 const controllers = require('./controllers');
+const upload = require('./upload');
 const pool = require('./db');
 const listEndpoints = require('./endpointlister');
 const http = require('http');
@@ -81,6 +88,13 @@ app.use('/img/no_person.png', express.static(path.join(__dirname, 'no_person.png
 }));
 // Página pública para credenciales (usar por QR sin el prefijo /auth)
 app.get('/credenciales/cedula=:cedula', controllers.getCredencialPage);
+
+// Ruta de prueba para subir una imagen sin autenticación (solo para pruebas locales)
+// Habilitar solo en entornos de desarrollo. Devuelve el nombre de archivo guardado.
+app.post('/_upload_test', upload.single('foto'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    return res.json({ filename: req.file.filename, path: `/uploads/${req.file.filename}`, size: req.file.size });
+});
 app.use('/auth', routes);
 app.get('/list-endpoints', (req, res) => {
     const endpoints = listEndpoints(app);
