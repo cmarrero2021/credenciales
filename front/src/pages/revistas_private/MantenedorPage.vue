@@ -251,6 +251,17 @@ const fotoPreview = ref(null);
 
 const onFotoChange = (file) => {
   if (file && file instanceof File) {
+    const maxSizeBytes = 1 * 1024 * 1024; // 1 MB
+    if (file.size > maxSizeBytes) {
+      Notify.create({
+        type: 'negative',
+        message: 'El tamaño del archivo es muy grande y no podrá ser cargado. El tamaño máximo de archivo es de 1 Mb.',
+        timeout: 5000
+      });
+      editForm.value.foto = null;
+      fotoPreview.value = null;
+      return;
+    }
     fotoPreview.value = URL.createObjectURL(file);
   } else {
     fotoPreview.value = null;
