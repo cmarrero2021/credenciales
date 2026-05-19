@@ -200,9 +200,9 @@
                 <q-select v-model="editForm.condicion" :options="condicionOptions" label="Condición" filled
                   emit-value map-options />
               </div>
-              <!-- Campo para subir foto PNG y previsualización -->
+              <!-- Campo para subir foto (PNG/JPG/JPEG) y previsualización -->
               <div class="col-12">
-                <q-file v-model="editForm.foto" label="Foto PNG del usuario" filled accept="image/png" :clearable="true"
+                <q-file v-model="editForm.foto" label="Foto del usuario (PNG, JPG, JPEG)" filled accept="image/png, image/jpeg, image/jpg" :clearable="true"
                   @rejected="onFileRejected" @update:model-value="onFotoChange" />
                 <div class="q-mt-md">
                   <div class="text-caption">Vista previa de la foto:</div>
@@ -1025,7 +1025,7 @@ const saveChanges = async () => {
 const onFileRejected = (rejectedFiles) => {
   Notify.create({
     type: 'negative',
-    message: 'Solo se permite subir archivos PNG.'
+    message: 'Solo se permite subir archivos en formato PNG, JPG o JPEG.'
   });
 };
 
