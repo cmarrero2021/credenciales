@@ -125,6 +125,101 @@ exports.createServer = async (req, res) => {
     }
 };
 
+// Carga masiva de fotos: acepta múltiples archivos y los asigna por nombre de archivo (cedula)
+exports.massUploadPhotos = async (req, res) => {
+    const fs = require('fs');
+    const files = req.files || [];
+
+    if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'No se han subido archivos.' });
+    }
+
+    const client = await pool.connect();
+    const resultado = {
+        procesadas: 0,
+        insertadas: [],
+        actualizadas: [],
+        rechazadas: []
+    };
+
+    try {
+        for (const file of files) {
+            const fotoPath = file.path;
+            const filename = (file.originalname || fotoPath).toString();
+
+            // Derivar cédula desde el nombre del archivo: quitar extensión y caracteres no numéricos
+            let cedula = filename.replace(/\.[^/.]+$/, '').replace(/\D/g, '');
+            if (!cedula) {
+                resultado.rechazadas.push({ file: filename, reason: 'no_cedula_en_nombre' });
+                try { fs.unlinkSync(fotoPath); } catch (e) { }
+                continue;
+            }
+
+            try {
+                await client.query('BEGIN');
+
+                const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
+                if (existsRes.rows.length === 0) {
+                    resultado.rechazadas.push({ cedula, file: filename, reason: 'servidor_no_encontrado' });
+                    await client.query('ROLLBACK');
+                    try { fs.unlinkSync(fotoPath); } catch (e) { }
+                    continue;
+                }
+
+                const usuario_id = existsRes.rows[0].id;
+                const foto_url = fotoPath.replace(/\\/g, '/');
+
+                // Buscar foto anterior
+                const queryOldFoto = 'SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1';
+                const oldFotoRes = await client.query(queryOldFoto, [usuario_id]);
+
+                if (oldFotoRes.rows.length > 0) {
+                    const oldFoto = oldFotoRes.rows[0].foto_url;
+                    if (oldFoto) {
+                        try {
+                            const nombreOldFoto = oldFoto.replace(/\\/g, '/').split('/').pop();
+                            const uploadsDir = path.join(__dirname, '../uploads');
+                            let realOldPath = null;
+                            if (fs.existsSync(uploadsDir)) {
+                                const filesInDir = fs.readdirSync(uploadsDir);
+                                const fileMatch = filesInDir.find(f => f.toLowerCase() === nombreOldFoto.toLowerCase());
+                                if (fileMatch) realOldPath = path.join(uploadsDir, fileMatch);
+                            }
+                            if (!realOldPath) realOldPath = path.join(uploadsDir, nombreOldFoto);
+                            if (fs.existsSync(realOldPath)) {
+                                try { fs.unlinkSync(realOldPath); } catch (e) { }
+                            }
+                        } catch (e) { }
+                    }
+
+                    // Actualizar
+                    const queryUpdateFoto = 'UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2';
+                    await client.query(queryUpdateFoto, [foto_url, usuario_id]);
+                    resultado.actualizadas.push(cedula);
+                } else {
+                    // Insertar
+                    const queryInsertFoto = 'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)';
+                    await client.query(queryInsertFoto, [usuario_id, foto_url]);
+                    resultado.insertadas.push(cedula);
+                }
+
+                await client.query('COMMIT');
+                resultado.procesadas++;
+            } catch (err) {
+                try { await client.query('ROLLBACK'); } catch (e) { }
+                resultado.rechazadas.push({ cedula, file: filename, reason: 'error_interno' });
+                try { fs.unlinkSync(fotoPath); } catch (e) { }
+            }
+        }
+
+        return res.status(200).json({ message: 'Carga masiva procesada.', resultado });
+    } catch (err) {
+        console.error('Error en massUploadPhotos:', err);
+        return res.status(500).json({ error: 'Error interno al procesar la carga masiva.' });
+    } finally {
+        client.release();
+    }
+};
 // Listar histórico de impresiones
 exports.listCredentialHistory = async (req, res) => {
     const client = await pool.connect();
@@ -2973,6 +3068,77 @@ exports.serverState = async (req, res) => {
         } catch (fallbackErr) {
             res.status(500).json({ error: 'Error al listar los estados de los servidores.' });
         }
+    } finally {
+        client.release();
+    }
+};
+
+exports.massUploadSinglePhoto = async (req, res) => {
+    const fs = require('fs');
+    const { cedula } = req.params;
+    const fotoPath = req.file ? req.file.path : null;
+
+    if (!fotoPath) {
+        return res.status(400).json({ error: 'No se ha subido ningún archivo.' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Verificar si el servidor existe
+        const queryExists = 'SELECT id FROM servidores WHERE cedula = $1';
+        const existsRes = await client.query(queryExists, [cedula]);
+        if (existsRes.rows.length === 0) {
+            console.log('Cédula no encontrada en carga masiva:', cedula);
+            await client.query('ROLLBACK');
+            try { fs.unlinkSync(fotoPath); } catch (e) { }
+            return res.status(404).json({ error: 'La cédula de la foto que intenta cargar no se encuentra registrada en servidores, para cargar la foto se debe registrar primero el servidor.' });
+        }
+
+        const usuario_id = existsRes.rows[0].id;
+        const foto_url = fotoPath.replace(/\\/g, '/');
+
+        // 2. Buscar foto anterior para eliminarla
+        const queryOldFoto = 'SELECT foto_url FROM fotos_usuarios WHERE usuario_id = $1';
+        const oldFotoRes = await client.query(queryOldFoto, [usuario_id]);
+
+        if (oldFotoRes.rows.length > 0) {
+            const oldFoto = oldFotoRes.rows[0].foto_url;
+            if (oldFoto) {
+                const nombreOldFoto = oldFoto.replace(/\\/g, '/').split('/').pop();
+                const uploadsDir = path.join(__dirname, '../uploads');
+                let realOldPath = null;
+                try {
+                    if (fs.existsSync(uploadsDir)) {
+                        const files = fs.readdirSync(uploadsDir);
+                        const fileMatch = files.find(f => f.toLowerCase() === nombreOldFoto.toLowerCase());
+                        if (fileMatch) realOldPath = path.join(uploadsDir, fileMatch);
+                    }
+                } catch (e) { }
+
+                if (!realOldPath) realOldPath = path.join(uploadsDir, nombreOldFoto);
+
+                if (fs.existsSync(realOldPath)) {
+                    try { fs.unlinkSync(realOldPath); } catch (e) { }
+                }
+            }
+            // Actualizar
+            const queryUpdateFoto = 'UPDATE fotos_usuarios SET foto_url = $1 WHERE usuario_id = $2';
+            await client.query(queryUpdateFoto, [foto_url, usuario_id]);
+        } else {
+            // Insertar
+            const queryInsertFoto = 'INSERT INTO fotos_usuarios (usuario_id, foto_url) VALUES ($1, $2)';
+            await client.query(queryInsertFoto, [usuario_id, foto_url]);
+        }
+
+        await client.query('COMMIT');
+        return res.json({ success: true, message: 'Foto cargada correctamente.', cedula });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        try { fs.unlinkSync(fotoPath); } catch (e) { }
+        console.error('Error en massUploadSinglePhoto:', error);
+        return res.status(500).json({ error: 'Error interno al procesar la foto.' });
     } finally {
         client.release();
     }

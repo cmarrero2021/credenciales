@@ -46,6 +46,8 @@ const {
     updateGlobalSessionTimeout,
     updateUserSessionTimeout,
     updateRoleSessionTimeout,    
+    massUploadSinglePhoto,
+    massUploadPhotos,
 } = require('./controllers');
 const {
     authenticate,
@@ -90,6 +92,9 @@ router.delete('/eliminar_servidor/:cedula', authenticate, authorize('delete_serv
 // Middleware para manejar errores de multer
 const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ error: 'El peso de la foto no coincide, por favor debe cargar la foto que pese igual o menos a 1 mb.' });
+        }
         return res.status(400).json({ error: 'Error al subir archivo: ' + err.message });
     } else if (err) {
         return res.status(400).json({ error: err.message });
@@ -98,6 +103,9 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 router.patch('/actualizar_servidor/:cedula', authenticate, authorize('update_servidor'), upload.single('foto'), handleMulterError, updateServer);
+router.post('/cargar_foto_masiva/:cedula', authenticate, authorize('update_servidor'), upload.single('foto'), handleMulterError, massUploadSinglePhoto);
+// Ruta para carga masiva de fotos: requiere autenticación y permiso de actualización de servidores
+router.post('/cargar_fotos_masivas', authenticate, authorize('update_servidor'), upload.array('fotos', 200), handleMulterError, massUploadPhotos);
 router.post('/actualizar_masiva_servidor', authenticate, authorize('update_servidor'), massUpdateServer);
 router.get('/servidores_estadisticas', authenticate, authorize('read_servidor'), serverStatistics);
 router.get('/adultos_horas', elderHour);

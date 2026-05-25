@@ -72,12 +72,12 @@
           </div> -->
           <!-- ///////////////////////////// -->
         </div>
-          <div class="col-xs-2 col-sm-2 row items-center q-gutter-sm">
+          <div class="col-auto row items-center q-gutter-sm">
           <div class="col row items-center q-gutter-sm" style="gap:8px;">
             <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <q-btn icon="file_upload" label="CARGA MASIVA" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <!-- Batch page size selection removed per request (no longer used) -->
-          <!--  <q-btn icon="print" label="IMPRIMIR LOTE" color="teal" size="sm" :disable="!selectionModel.length" @click="generatePdfBatch(batchPageSize)" v-if="hasPermission('view_admin')" /> -->
+            <q-btn icon="file_upload" label="CARGA MASIVA SERVIDORES" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <q-btn icon="photo_library" label="CARGA MASIVA FOTOS" title="Carga masiva de fotos" @click="triggerPhotoUpload" color="indigo" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <input type="file" multiple accept="image/png, image/jpeg, image/jpg" ref="photoInput" style="display: none" @change="handleMassPhotoUpload" />
           </div>
         </div>
       </template>
@@ -277,6 +277,98 @@ import axios from 'axios';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
+const photoInput = ref(null);
+
+const triggerPhotoUpload = () => {
+  if (photoInput.value) {
+    photoInput.value.click();
+  }
+};
+
+const handleMassPhotoUpload = async (event) => {
+  const files = Array.from(event.target.files || []);
+  event.target.value = '';
+
+  if (files.length === 0) return;
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const file of files) {
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > 1.0) {
+      Notify.create({
+        type: 'negative',
+        message: `El peso de la foto (${file.name}) no coincide, por favor debe cargar la foto que pese igual o menos a 1 mb.`,
+        timeout: 6000
+      });
+      errorCount++;
+      continue;
+    }
+
+    const baseName = file.name.replace(/\.[^/.]+$/, "");
+    const cleanCedula = baseName.replace(/[\s.,]/g, '');
+
+    if (!/^\d+$/.test(cleanCedula)) {
+      Notify.create({
+        type: 'warning',
+        message: `El nombre del archivo "${file.name}" no es una cédula válida. Debe contener solo números.`,
+        timeout: 6000
+      });
+      errorCount++;
+      continue;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('foto', file);
+      const token = LocalStorage.getItem('token');
+      
+    await axios.post(`https://credenciales.minaamp.gob.ve/auth/cargar_foto_masiva/${cleanCedula}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        // Si manejas token, asegúrate de pasarlo aquí si da error 401:
+        'Authorization': `Bearer ${LocalStorage.getItem("token")}`
+      }
+    });
+
+
+      /*await axios.post(`${apiURL}/auth/cargar_foto_masiva/${cleanCedula}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });*/
+
+      Notify.create({
+        type: 'positive',
+        message: `Foto de la cédula ${cleanCedula} cargada con éxito.`,
+        timeout: 3000
+      });
+      successCount++;
+    } catch (error) {
+      errorCount++;
+      const serverMsg = error.response?.data?.error;
+      const defaultMsg = `Error al cargar la foto de la cédula ${cleanCedula}.`;
+      Notify.create({
+        type: 'negative',
+        message: serverMsg || defaultMsg,
+        timeout: 8000
+      });
+    }
+  }
+
+  if (successCount > 0) {
+    await fetchServers();
+  }
+
+  Notify.create({
+    type: 'info',
+    message: `Proceso de carga masiva de fotos completado. Exitosas: ${successCount}, Fallidas: ${errorCount}`,
+    timeout: 5000
+  });
+};
+
 const votoFilter = ref(1); // 1=Todos, 2=Votaron, 3=No votaron
 // Definición de columnas para la tabla
 const columns = [
