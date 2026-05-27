@@ -29,7 +29,7 @@ const corsOptions = {
         return callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Headers', 'Access-Control-Request-Method'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Headers', 'Access-Control-Request-Method', 'X-Original-Filename', 'x-original-filename'],
     exposedHeaders: ['Content-Range', 'X-Total-Count'],
     credentials: true,
     optionsSuccessStatus: 200
@@ -45,7 +45,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Authorization,authorization,Content-Type,X-Requested-With,Accept,Origin,Access-Control-Request-Headers,Access-Control-Request-Method');
+    res.header('Access-Control-Allow-Headers', 'Authorization,authorization,Content-Type,X-Requested-With,Accept,Origin,Access-Control-Request-Headers,Access-Control-Request-Method,X-Original-Filename,x-original-filename');
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });

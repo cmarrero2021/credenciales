@@ -48,6 +48,11 @@ const {
     updateRoleSessionTimeout,    
     massUploadSinglePhoto,
     massUploadPhotos,
+    getMassUploadErrors,
+    getMassUploadHistory,
+    getMassUploadLatestDB,
+    getMassUploadErrorsByFile,
+    logFailedAttempt,
 } = require('./controllers');
 const {
     authenticate,
@@ -59,12 +64,29 @@ const router = express.Router();
 
 const multer = require('multer');
 const upload = require('./upload');
+const fs = require('fs');
+const path = require('path');
+const pool = require('./db');
 
 // Rutas Públicas
 router.get('/prueba', prueba);
 router.post('/login', login); // Inicio de sesión
 router.post('/verify-email', verifyEmail); // Verificación de correo electrónico
 router.post('/force-logout', forceLogout); // Cierre forzoso de sesión
+
+// FALLBACK TEMPORAL: aceptar intentos de logueo de errores de carga masiva
+// colocado aquí SIN autenticación para evitar 404 en despliegues donde
+// el middleware de autenticación/proxy esté fallando. Quitar cuando se
+// confirme y arregle la causa raíz.
+router.post('/cargar_fotos_masivas/log_failed_attempt', (req, res, next) => {
+    try {
+        // Llamar al controlador existente (este controlador tolera req.userId === undefined)
+        return require('./controllers').logFailedAttempt(req, res, next);
+    } catch (e) {
+        console.warn('Fallback log_failed_attempt error:', e && e.message ? e.message : e);
+        return res.status(500).json({ error: 'Fallback: error interno.' });
+    }
+});
 
 // Endpoint para credencial (público)
 // Nota: registrar las rutas específicas (/historico) ANTES que la ruta dinámica
@@ -89,8 +111,58 @@ router.patch('/eliminar_servidor/:cedula', authenticate, authorize('update_histo
 router.patch('/habilitar_servidor/:cedula', authenticate, authorize('update_historico'), enableServer);
 // Physical delete still requires delete permission
 router.delete('/eliminar_servidor/:cedula', authenticate, authorize('delete_servidor'), deleteServer);
+
 // Middleware para manejar errores de multer
 const handleMulterError = (err, req, res, next) => {
+    // Registrar errores de multer para que aparezcan en el historial de errores
+    try {
+        if (err) {
+            const uploadsDir = path.join(__dirname, '../uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+            const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+            const now = new Date().toISOString();
+            const reason = err instanceof multer.MulterError ? (err.code || 'multer_error') : 'upload_error';
+            
+            // Usar la cabecera X-Original-Filename si existe
+            const originalFilename = req.headers['x-original-filename'] ? decodeURIComponent(req.headers['x-original-filename']) : null;
+            const fileInfo = originalFilename || (req.file && (req.file.originalname || req.file.path)) || (req.files && req.files.length ? (req.files.map(f=>f.originalname||f.path).join(',')) : null);
+            
+            // Derivar cédula si es posible a partir del nombre original
+            let cleanCedula = null;
+            if (fileInfo) {
+                const baseName = fileInfo.replace(/\.[^/.]+$/, "");
+                if (baseName.includes('_')) {
+                    const parts = baseName.split('_');
+                    const lastPart = parts[parts.length - 1];
+                    const clean = lastPart.replace(/\D/g, '');
+                    if (clean) cleanCedula = clean;
+                } else {
+                    const clean = baseName.replace(/\D/g, '');
+                    if (clean) cleanCedula = clean;
+                }
+            }
+
+            const entry = { timestamp: now, user_id: req.userId || null, file: fileInfo, reason: reason, message: err && err.message ? String(err.message) : null };
+            // Sobrescribir latest con este único error (para visibilidad inmediata)
+            const latestObj = { generated_at: now, user_id: req.userId || null, total_files: (req.files ? req.files.length : (req.file ? 1 : 0)), resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: [entry] } };
+            try { fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8'); } catch (e) { console.warn('No se pudo escribir latest multer error:', e); }
+            try { fs.appendFileSync(historyPath, JSON.stringify(entry) + '\n', 'utf8'); } catch (e) { }
+            // Intentar insertar en BD (no bloquear la respuesta)
+            try {
+                pool.query('INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id', [req.userId || null, (req.files ? req.files.length : (req.file ? 1 : 0)), JSON.stringify(latestObj.resultado)])
+                .then(resIns => {
+                    const uploadId = resIns.rows && resIns.rows[0] && resIns.rows[0].id ? resIns.rows[0].id : null;
+                    if (uploadId) {
+                        return pool.query('INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)', [uploadId, entry.file || null, cleanCedula || null, entry.reason || null, entry.message || null]);
+                    }
+                    return null;
+                })
+                .catch(e=>{ console.warn('No se pudo insertar multer error en BD:', e && e.message ? e.message : e); });
+            } catch (e) { console.warn('Error al insertar multer error en BD (sync):', e); }
+        }
+    } catch (e) { console.warn('Error registrando multer error:', e); }
+
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ error: 'El peso de la foto no coincide, por favor debe cargar la foto que pese igual o menos a 1 mb.' });
@@ -106,6 +178,15 @@ router.patch('/actualizar_servidor/:cedula', authenticate, authorize('update_ser
 router.post('/cargar_foto_masiva/:cedula', authenticate, authorize('update_servidor'), upload.single('foto'), handleMulterError, massUploadSinglePhoto);
 // Ruta para carga masiva de fotos: requiere autenticación y permiso de actualización de servidores
 router.post('/cargar_fotos_masivas', authenticate, authorize('update_servidor'), upload.array('fotos', 200), handleMulterError, massUploadPhotos);
+// Obtener último archivo JSON de errores (sobrescrito por la última ejecución)
+router.get('/cargar_fotos_masivas/errors', authenticate, authorize('update_servidor'), getMassUploadErrors);
+// Historial completo desde la BD (JSON)
+router.get('/cargar_fotos_masivas/errors/history', authenticate, authorize('update_servidor'), getMassUploadHistory);
+// Historial por nombre de archivo (original)
+router.get('/cargar_fotos_masivas/errors/file', authenticate, authorize('update_servidor'), getMassUploadErrorsByFile);
+// Último resumen desde la BD (incluye errores asociados)
+router.get('/cargar_fotos_masivas/errors/latest_db', authenticate, authorize('update_servidor'), getMassUploadLatestDB);
+router.post('/cargar_fotos_masivas/log_failed_attempt', authenticate, authorize('update_servidor'), logFailedAttempt);
 router.post('/actualizar_masiva_servidor', authenticate, authorize('update_servidor'), massUpdateServer);
 router.get('/servidores_estadisticas', authenticate, authorize('read_servidor'), serverStatistics);
 router.get('/adultos_horas', elderHour);

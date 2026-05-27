@@ -11,16 +11,25 @@
       class="responsive-table" :class="{ 'editing-mode': isQuickEditMode }">
       <!-- Búsqueda general y botón borrar filtros -->
       <template v-slot:top>
-        <!-- Primera fila: Búsqueda general y botón borrar filtros -->
+        <!-- Primera fila: Búsqueda general, filtro foto y botón borrar filtros -->
         <div class="full-width row wrap items-center q-mb-md">
           <!-- Búsqueda general -->
-          <div class="col-xs-10 col-sm-5 q-pr-xs">
+          <div class="col-xs-12 col-sm-5 q-pr-xs">
             <q-input outlined dense debounce="300" v-model="searchQuery" label="Búsqueda general"
               placeholder="Buscar en todos los campos">
               <template v-slot:append>
                 <q-icon v-if="searchQuery" name="clear" @click.stop="clearSearch" class="cursor-pointer" size="sm" />
               </template>
             </q-input>
+          </div>
+          <!-- Toggle Filtro de Foto -->
+          <div class="col-xs-10 col-sm-4 q-px-sm flex items-center">
+            <q-toggle
+              v-model="photoFilter"
+              toggle-indeterminate
+              :label="photoFilter === null ? 'Mostrar todos' : (photoFilter ? 'Servidores con foto' : 'Servidores sin foto')"
+              color="primary"
+            />
           </div>
           <!-- Botón "Borrar todos los filtros" -->
           <div class="col-xs-2 col-sm-1">
@@ -70,13 +79,13 @@
               />
             </div>
           </div> -->
-          <!-- ///////////////////////////// -->
         </div>
           <div class="col-auto row items-center q-gutter-sm">
           <div class="col row items-center q-gutter-sm" style="gap:8px;">
             <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
             <q-btn icon="file_upload" label="CARGA MASIVA SERVIDORES" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <q-btn icon="photo_library" label="CARGA MASIVA FOTOS" title="Carga masiva de fotos" @click="triggerPhotoUpload" color="indigo" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <q-btn icon="upload_file" label="CARGA MASIVA FOTOS" title="Carga masiva de fotos" @click="triggerPhotoUpload" color="info" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+            <q-btn icon="visibility" label="VER ERRORES" title="Ver errores carga masiva" @click="openErrorsModal" color="orange" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
             <input type="file" multiple accept="image/png, image/jpeg, image/jpg" ref="photoInput" style="display: none" @change="handleMassPhotoUpload" />
           </div>
         </div>
@@ -97,10 +106,6 @@
             <!-- Botón Editar -->
             <q-btn icon="edit" color="primary" title="Editar servidor" size="xs" @click.stop="openEditModal(props.row)"
               class="q-mr-xs" v-if="(hasPermission('update_servidor') || hasPermission('view_admin'))" />
-
-            <!-- Botón Marcas Votó -->
-            <!-- <q-btn icon="check" color="secondary" title="Marcar que el servidor votó" size="xs"
-              class="q-mr-xs" @click.stop="startQuickEdit(props.row)" v-if="hasPermission('view_admin')"/> -->
 
             <!-- Botón Borrar -->
             <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor"
@@ -177,9 +182,6 @@
                 <q-input :model-value="editForm.apellidos"
                   @update:model-value="val => editForm.apellidos = val.toUpperCase()" label="Apellidos" filled />
               </div>
-              <!-- <div class="col-12 col-md-6">
-                <q-input v-model="editForm.hora_voto" label="Votó" type="time" filled />
-              </div> -->
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.institucion" :options="optionsu.institucion" label="Institución" filled
                   option-label="label" option-value="value" />
@@ -210,11 +212,6 @@
                     style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid #ccc;" />
                 </div>
               </div>
-              <!-- <div class="col-12">
-                <q-input :model-value="editForm.observaciones"
-                  @update:model-value="val => editForm.observaciones = val.toUpperCase()" label="Observaciones"
-                  type="textarea" filled />
-              </div> -->
             </div>
             <div class="row justify-end">
               <q-btn icon="cancel" color="negative" type="reset" @click="closeEditModal" />
@@ -223,6 +220,112 @@
             </div>
           </q-form>
         </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Modal para mostrar errores de carga masiva -->
+    <q-dialog v-model="errorsModal" maximized>
+      <q-card style="min-width: 600px; max-width: 90vw;">
+        <q-card-section class="q-pb-none">
+          <div class="text-h6">Errores - Carga Masiva de Fotos</div>
+          <div class="text-subtitle2 q-mt-sm">Último resumen:</div>
+          <div v-if="latestSummary" class="q-mt-xs">
+            <div>Generado: {{ new Date(latestSummary.created_at || latestSummary.generated_at).toLocaleString() }}</div>
+            <div>Usuario: {{ latestSummary.user_id || '-' }}</div>
+            <div>Total archivos con error: <strong>{{ errorsList.length }}</strong></div>
+          </div>
+          <div v-else class="text-caption q-mt-sm">No hay resumen disponible.</div>
+        </q-card-section>
+
+        <q-card-section>
+          <div class="row items-center q-gutter-sm q-mb-sm">
+            <div class="col">
+              <q-input dense debounce="300" v-model="searchErrors" placeholder="Buscar por nombre de archivo o usuario..." clearable outlined />
+            </div>
+            <div class="col-auto">
+              <q-btn dense flat icon="refresh" label="Refrescar" @click="fetchErrors" />
+            </div>
+          </div>
+          <div class="text-caption text-grey-6 q-mb-sm">Haz clic en el nombre del archivo para ver el historial completo de intentos fallidos.</div>
+          <q-table
+            :rows="filteredErrors"
+            :columns="[
+              { name: 'created_at', label: 'Fecha y Hora', field: 'created_at', align: 'center', sortable: true },
+              { name: 'file_name', label: 'Archivo (clic para ver historial)', field: 'file_name', align: 'center', sortable: true },
+              { name: 'user_id', label: 'Usuario', field: 'user_id', align: 'center' }
+            ]"
+            row-key="id"
+            dense
+            v-model:pagination="errorsPagination"
+            :rows-per-page-options="[5,10,20,50]"
+          >
+            <template v-slot:body-cell-created_at="props">
+              <q-td :props="props" class="text-center">
+                {{ new Date(props.row.created_at).toLocaleString() }}
+              </q-td>
+            </template>
+            <template v-slot:body-cell-file_name="props">
+              <q-td :props="props" class="text-center">
+                <span
+                  class="cursor-pointer text-primary"
+                  style="text-decoration: underline; font-weight: 500;"
+                  @click.stop="onErrorRowClick($event, props.row)"
+                  :title="'Ver historial de intentos para: ' + props.row.file_name"
+                >
+                  {{ props.row.file_name }}
+                </span>
+              </q-td>
+            </template>
+            <template v-slot:body-cell-user_id="props">
+              <q-td :props="props" class="text-center">{{ props.row.user_id || '-' }}</q-td>
+            </template>
+          </q-table>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat icon="download" label="Exportar TXT" color="positive" @click="exportErrorsToTxt" :disable="!errorsList.length" />
+          <q-btn flat label="Refrescar" color="primary" @click="fetchErrors" />
+          <q-btn flat label="Cerrar" color="primary" v-close-popup @click="errorsModal = false" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Dialog para historial por archivo -->
+    <q-dialog v-model="fileHistoryDialog">
+      <q-card style="min-width: 800px; max-width: 95vw;">
+        <q-card-section class="q-pb-none">
+          <div class="text-h6">Historial de cargas fallidas</div>
+          <div class="text-subtitle2 text-grey-7 q-mt-xs">Archivo: <strong>{{ selectedFileName }}</strong></div>
+          <div class="text-caption text-grey-5 q-mt-xs">Los intentos están ordenados del más reciente al más antiguo.</div>
+        </q-card-section>
+        <q-card-section>
+          <q-table
+            :rows="fileHistoryList"
+            :columns="[
+              { name: 'created_at', label: 'Fecha y Hora', field: 'created_at', align: 'center', sortable: true },
+              { name: 'user_id', label: 'Usuario', field: 'user_id', align: 'center' },
+              { name: 'reason', label: 'Motivo del Rechazo', field: 'reason', align: 'left' }
+            ]"
+            row-key="id"
+            dense
+            :rows-per-page-options="[5, 10, 20]"
+          >
+            <template v-slot:body-cell-created_at="props">
+              <q-td :props="props" class="text-center">
+                {{ new Date(props.row.created_at).toLocaleString() }}
+              </q-td>
+            </template>
+            <template v-slot:body-cell-user_id="props">
+              <q-td :props="props" class="text-center">{{ props.row.user_id || '-' }}</q-td>
+            </template>
+            <template v-slot:body-cell-reason="props">
+              <q-td :props="props">{{ getSystemErrorMessage(props.row) }}</q-td>
+            </template>
+          </q-table>
+        </q-card-section>
+        <q-card-actions align="center">
+          <q-btn label="Cerrar" color="primary" v-close-popup @click="fileHistoryDialog = false" />
+        </q-card-actions>
       </q-card>
     </q-dialog>
   </div>
@@ -285,6 +388,49 @@ const triggerPhotoUpload = () => {
   }
 };
 
+const extractCedulaFromFilename = (filename) => {
+  const baseName = filename.replace(/\.[^/.]+$/, "").trim();
+  
+  // 1. Si es puramente numérico y tiene entre 6 y 9 dígitos
+  if (/^\d{6,9}$/.test(baseName)) {
+    return baseName;
+  }
+  
+  // 2. Si es del formato timestamp_cedula (ej: 20260526_085918_6088396)
+  if (baseName.includes('_')) {
+    const parts = baseName.split('_');
+    const lastPart = parts[parts.length - 1].trim();
+    if (/^\d{6,9}$/.test(lastPart)) {
+      return lastPart;
+    }
+  }
+  
+  // 3. Si tiene prefijo CI o V (ej: CI-6088396, V6088396)
+  const cleanPrefix = baseName.replace(/^(ci|v|e)[-_\s]?/i, '');
+  if (/^\d{6,9}$/.test(cleanPrefix)) {
+    return cleanPrefix;
+  }
+  
+  // No es una cédula válida
+  return null;
+};
+
+const getSystemErrorMessage = (row) => {
+  if (!row) return '';
+  const reason = row.reason;
+  const fileName = row.file_name || row.file || '';
+  const cleanCedula = row.cedula || extractCedulaFromFilename(fileName) || '';
+
+  if (reason === 'LIMIT_FILE_SIZE') {
+    return `El peso de la foto (${fileName}) no coincide, por favor debe cargar la foto que pese igual o menos a 1 mb.`;
+  }
+  if (reason === 'no_cedula_en_nombre') {
+    return `El nombre del archivo "${fileName}" no es una cédula válida. Debe contener solo números.`;
+  }
+  return `Error al cargar la foto de la cédula ${cleanCedula}.`;
+};
+
+
 const handleMassPhotoUpload = async (event) => {
   const files = Array.from(event.target.files || []);
   event.target.value = '';
@@ -295,7 +441,9 @@ const handleMassPhotoUpload = async (event) => {
   let errorCount = 0;
 
   for (const file of files) {
+    const cleanCedula = extractCedulaFromFilename(file.name);
     const fileSizeMB = file.size / (1024 * 1024);
+    
     if (fileSizeMB > 1.0) {
       Notify.create({
         type: 'negative',
@@ -303,19 +451,46 @@ const handleMassPhotoUpload = async (event) => {
         timeout: 6000
       });
       errorCount++;
+      // Registrar error en backend
+      try {
+        const token = LocalStorage.getItem('token');
+        await axios.post(`${apiBase}/auth/cargar_fotos_masivas/log_failed_attempt`, {
+          file_name: file.name,
+          reason: 'LIMIT_FILE_SIZE',
+          cedula: cleanCedula || null
+        }, {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+      } catch (err) {
+        console.error('Error logging size limit error:', err);
+      }
       continue;
     }
 
-    const baseName = file.name.replace(/\.[^/.]+$/, "");
-    const cleanCedula = baseName.replace(/[\s.,]/g, '');
-
-    if (!/^\d+$/.test(cleanCedula)) {
+    if (!cleanCedula) {
       Notify.create({
         type: 'warning',
         message: `El nombre del archivo "${file.name}" no es una cédula válida. Debe contener solo números.`,
         timeout: 6000
       });
       errorCount++;
+      // Registrar error en backend
+      try {
+        const token = LocalStorage.getItem('token');
+        await axios.post(`${apiBase}/auth/cargar_fotos_masivas/log_failed_attempt`, {
+          file_name: file.name,
+          reason: 'no_cedula_en_nombre',
+          cedula: null
+        }, {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+      } catch (err) {
+        console.error('Error logging invalid format error:', err);
+      }
       continue;
     }
 
@@ -323,22 +498,14 @@ const handleMassPhotoUpload = async (event) => {
       const formData = new FormData();
       formData.append('foto', file);
       const token = LocalStorage.getItem('token');
-      
-    await axios.post(`https://credenciales.minaamp.gob.ve/auth/cargar_foto_masiva/${cleanCedula}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        // Si manejas token, asegúrate de pasarlo aquí si da error 401:
-        'Authorization': `Bearer ${LocalStorage.getItem("token")}`
-      }
-    });
 
-
-      /*await axios.post(`${apiURL}/auth/cargar_foto_masiva/${cleanCedula}`, formData, {
+      await axios.post(`${apiURL}/auth/cargar_foto_masiva/${cleanCedula}`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          'X-Original-Filename': encodeURIComponent(file.name),
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
-      });*/
+      });
 
       Notify.create({
         type: 'positive',
@@ -368,6 +535,130 @@ const handleMassPhotoUpload = async (event) => {
     timeout: 5000
   });
 };
+
+// Exportar errores a archivo .txt desde el modal
+const exportErrorsToTxt = () => {
+  if (!errorsList.value || errorsList.value.length === 0) {
+    Notify.create({ type: 'warning', message: 'No hay errores para exportar.' });
+    return;
+  }
+  const lines = [];
+  lines.push('=== REPORTE DE ERRORES - CARGA MASIVA DE FOTOS ===');
+  lines.push(`Fecha de exportación: ${new Date().toLocaleString()}`);
+  lines.push(`Total de archivos con error: ${errorsList.value.length}`);
+  lines.push('='.repeat(60));
+  lines.push('');
+  for (const row of errorsList.value) {
+    const fecha = row.created_at ? new Date(row.created_at).toLocaleString() : '-';
+    const archivo = row.file_name || '-';
+    const usuario = row.user_id || '-';
+    const motivo = getSystemErrorMessage(row);
+    lines.push(`Fecha: ${fecha}`);
+    lines.push(`Archivo: ${archivo}`);
+    lines.push(`Usuario: ${usuario}`);
+    lines.push(`Motivo: ${motivo}`);
+    lines.push('-'.repeat(60));
+  }
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `errores_carga_fotos_${Date.now()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+  Notify.create({ type: 'positive', message: 'Reporte de errores exportado como TXT.' });
+};
+
+// Modal / estado para ver errores
+const errorsModal = ref(false);
+const errorsList = ref([]);
+const latestSummary = ref(null);
+const searchErrors = ref('');
+const errorsPagination = ref({ page: 1, rowsPerPage: 10, rowsNumber: 0 });
+
+const openErrorsModal = async () => {
+  errorsModal.value = true;
+  await fetchErrors();
+  await fetchLatestSummary();
+};
+
+const fetchErrors = async () => {
+  try {
+    const token = LocalStorage.getItem('token');
+    const resp = await axios.get(`${apiBase}/auth/cargar_fotos_masivas/errors/history?limit=200`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+    errorsList.value = resp.data || [];
+    errorsPagination.value.rowsNumber = (errorsList.value || []).length;
+  } catch (err) {
+    console.error('Error fetching errors history', err);
+    Notify.create({ type: 'negative', message: err.response?.data?.error || 'No se pudo obtener historial de errores.' });
+    errorsList.value = [];
+  }
+};
+
+const fetchLatestSummary = async () => {
+  try {
+    const token = LocalStorage.getItem('token');
+    const resp = await axios.get(`${apiBase}/auth/cargar_fotos_masivas/errors/latest_db`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+    latestSummary.value = resp.data || null;
+  } catch (err) {
+    console.warn('No latest summary from DB', err);
+    latestSummary.value = null;
+  }
+};
+
+const fileHistoryDialog = ref(false);
+const fileHistoryList = ref([]);
+const selectedFileName = ref('');
+
+const fetchFileHistory = async (fileName) => {
+  try {
+    const token = LocalStorage.getItem('token');
+    const resp = await axios.get(`${apiBase}/auth/cargar_fotos_masivas/errors/file`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      params: { name: fileName }
+    });
+    fileHistoryList.value = resp.data || [];
+  } catch (err) {
+    console.error('Error fetching file history', err);
+    fileHistoryList.value = [];
+    Notify.create({ type: 'negative', message: err.response?.data?.error || 'No se pudo obtener historial de archivo.' });
+  }
+};
+
+const onErrorRowClick = async (evt, row) => {
+  const targetRow = row || (evt && evt.row) || null;
+  if (!targetRow) return;
+  const fname = targetRow.file_name || targetRow.file || targetRow.file_originalname || targetRow.fileName || null;
+  if (!fname) {
+    Notify.create({ type: 'warning', message: 'Nombre de archivo no disponible.' });
+    return;
+  }
+  selectedFileName.value = fname;
+  await fetchFileHistory(fname);
+  fileHistoryDialog.value = true;
+};
+
+const filteredErrors = computed(() => {
+  const q = (searchErrors.value || '').toString().trim().toLowerCase();
+  if (!q) return errorsList.value || [];
+  return (errorsList.value || []).filter(e => {
+    return (e.file_name || '').toString().toLowerCase().includes(q)
+      || (e.cedula || '').toString().toLowerCase().includes(q)
+      || (e.reason || '').toString().toLowerCase().includes(q)
+      || (e.user_id || '').toString().toLowerCase().includes(q)
+  });
+});
 
 const votoFilter = ref(1); // 1=Todos, 2=Votaron, 3=No votaron
 // Definición de columnas para la tabla
@@ -511,7 +802,7 @@ async function printBatchServidores(size = null) {
     }
 
     // Datos para construir QR
-    const qrBaseUrl = import.meta.env.VITE_CREDENCIAL_QR_URL || (apiURL || '') + '/credenciales/cedula='
+    const qrBaseUrl = 'https://credenciales.minaamp.gob.ve/credenciales/cedula='
 
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi]
@@ -807,6 +1098,7 @@ async function generatePdfBatch(size = null) {
 
 // Búsqueda general
 const searchQuery = ref('');
+const photoFilter = ref(null);
 
 // Filtros para las columnas
 const filters = ref({
@@ -1002,6 +1294,7 @@ const clearAllFilters = () => {
     filters.value[filter] = null;
   }
   searchQuery.value = '';
+  photoFilter.value = null;
   // votoFilter.value = 1;
 };
 
@@ -1019,7 +1312,10 @@ const getOptions = (filterName) => {
 /////////////////////////
 const filteredServers = computed(() => {
   let votofilteredServers = servers.value.filter(server => {
-    return true;
+    if (photoFilter.value === null) return true;
+    const foto = server.foto_url || '';
+    const hasPhoto = foto && !foto.includes('no_person.png') && !foto.includes('no_person.jpg');
+    return photoFilter.value ? hasPhoto : !hasPhoto;
   });
 
   // Filtrar por búsqueda general

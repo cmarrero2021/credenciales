@@ -39,6 +39,34 @@ function normalizeReason(raw) {
         try { return String(raw) } catch (ee) { return null }
     }
 }
+
+const extractCedulaFromFilename = (filename) => {
+    const baseName = (filename || '').replace(/\.[^/.]+$/, "").trim();
+    
+    // 1. Si es puramente numérico y tiene entre 6 y 9 dígitos
+    if (/^\d{6,9}$/.test(baseName)) {
+        return baseName;
+    }
+    
+    // 2. Si es del formato timestamp_cedula (ej: 20260526_085918_6088396)
+    if (baseName.includes('_')) {
+        const parts = baseName.split('_');
+        const lastPart = parts[parts.length - 1].trim();
+        if (/^\d{6,9}$/.test(lastPart)) {
+            return lastPart;
+        }
+    }
+    
+    // 3. Si tiene prefijo CI o V (ej: CI-6088396, V6088396)
+    const cleanPrefix = baseName.replace(/^(ci|v|e)[-_\s]?/i, '');
+    if (/^\d{6,9}$/.test(cleanPrefix)) {
+        return cleanPrefix;
+    }
+    
+    // No es una cédula válida
+    return null;
+};
+
 // ================================
 // Servidores
 // ================================
@@ -147,10 +175,10 @@ exports.massUploadPhotos = async (req, res) => {
             const fotoPath = file.path;
             const filename = (file.originalname || fotoPath).toString();
 
-            // Derivar cédula desde el nombre del archivo: quitar extensión y caracteres no numéricos
-            let cedula = filename.replace(/\.[^/.]+$/, '').replace(/\D/g, '');
+            // Derivar cédula desde el nombre del archivo de forma robusta
+            let cedula = extractCedulaFromFilename(filename);
             if (!cedula) {
-                resultado.rechazadas.push({ file: filename, reason: 'no_cedula_en_nombre' });
+                resultado.rechazadas.push({ file: filename, file_originalname: (file && file.originalname) ? file.originalname : filename, reason: 'no_cedula_en_nombre' });
                 try { fs.unlinkSync(fotoPath); } catch (e) { }
                 continue;
             }
@@ -160,7 +188,7 @@ exports.massUploadPhotos = async (req, res) => {
 
                 const existsRes = await client.query('SELECT id FROM servidores WHERE cedula = $1', [cedula]);
                 if (existsRes.rows.length === 0) {
-                    resultado.rechazadas.push({ cedula, file: filename, reason: 'servidor_no_encontrado' });
+                    resultado.rechazadas.push({ cedula, file: filename, file_originalname: (file && file.originalname) ? file.originalname : filename, reason: 'servidor_no_encontrado' });
                     await client.query('ROLLBACK');
                     try { fs.unlinkSync(fotoPath); } catch (e) { }
                     continue;
@@ -205,11 +233,65 @@ exports.massUploadPhotos = async (req, res) => {
 
                 await client.query('COMMIT');
                 resultado.procesadas++;
-            } catch (err) {
+                } catch (err) {
                 try { await client.query('ROLLBACK'); } catch (e) { }
-                resultado.rechazadas.push({ cedula, file: filename, reason: 'error_interno' });
+                resultado.rechazadas.push({ cedula, file: filename, file_originalname: (file && file.originalname) ? file.originalname : filename, reason: 'error_interno' });
                 try { fs.unlinkSync(fotoPath); } catch (e) { }
             }
+        }
+
+        // Preparar archivo de errores (se sobrescribe con la última ejecución)
+        try {
+            const uploadsDir = path.join(__dirname, '../uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+            const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+
+            const now = new Date().toISOString();
+            const latestObj = {
+                generated_at: now,
+                user_id: req.userId || null,
+                total_files: files.length,
+                resultado
+            };
+
+            // Insertar en la BD: mass_uploads + mass_upload_errors
+            try {
+                const uploadRes = await client.query(
+                    'INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id',
+                    [req.userId || null, files.length, JSON.stringify(resultado)]
+                );
+                const uploadId = uploadRes.rows[0].id;
+                for (const r of resultado.rechazadas) {
+                        // Guardar siempre el nombre original del archivo si está disponible
+                        const fileName = (r.file_originalname) ? r.file_originalname : (r.file || null);
+                        await client.query(
+                            'INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)',
+                            [uploadId, fileName, r.cedula || null, r.reason || null, r.details ? JSON.stringify(r.details) : null]
+                        );
+                    }
+            } catch (dbErr) {
+                console.warn('No se pudo insertar registros de carga masiva en BD:', dbErr && dbErr.message ? dbErr.message : dbErr);
+            }
+
+            // Sobrescribir archivo latest
+            fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8');
+
+            // Escribir history en formato JSONL (una línea por error)
+            const lines = [];
+            for (const r of resultado.rechazadas) {
+                const entry = {
+                    timestamp: now,
+                    user_id: req.userId || null,
+                    file: r.file_originalname ? r.file_originalname : (r.file || null),
+                    cedula: r.cedula || null,
+                    reason: r.reason || null
+                };
+                lines.push(JSON.stringify(entry));
+            }
+            if (lines.length > 0) fs.appendFileSync(historyPath, lines.join('\n') + '\n', 'utf8');
+        } catch (fileErr) {
+            console.warn('No se pudo escribir archivo de errores:', fileErr);
         }
 
         return res.status(200).json({ message: 'Carga masiva procesada.', resultado });
@@ -218,6 +300,25 @@ exports.massUploadPhotos = async (req, res) => {
         return res.status(500).json({ error: 'Error interno al procesar la carga masiva.' });
     } finally {
         client.release();
+    }
+};
+
+// Retornar el último archivo de errores (JSON) generado por la carga masiva
+exports.getMassUploadErrors = async (req, res) => {
+    const fs = require('fs');
+    try {
+        const uploadsDir = path.join(__dirname, '../uploads');
+        const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+        if (!fs.existsSync(latestPath)) {
+            // Devolver estructura vacía para evitar 404 en el cliente
+            return res.status(200).json({ generated_at: null, user_id: null, total_files: 0, resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: [] } });
+        }
+        const content = fs.readFileSync(latestPath, 'utf8');
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(200).send(content);
+    } catch (err) {
+        console.error('Error leyendo archivo de errores:', err);
+        return res.status(500).json({ error: 'Error al leer el archivo de errores.' });
     }
 };
 // Listar histórico de impresiones
@@ -545,13 +646,29 @@ exports.getCredencialPage = async (req, res) => {
                     fileMatch = files.find(f => f.toLowerCase() === nombreFoto.toLowerCase());
                 }
             } catch (e) { }
-            if (fileMatch) {
-                final_url = `/uploads/${fileMatch}`;
-            } else {
-                // Solo asignar como foto final si sabemos que no existe ningún listado pero la URL valía... aunque es la vista pública
-                // Validamos chequeo por defecto
-                const realPathFallback = path.join(__dirname, '../uploads', nombreFoto);
-                if (fs.existsSync(realPathFallback)) final_url = `/uploads/${nombreFoto}`;
+
+            // Preferir servir la imagen embebida (data URL) cuando el archivo exista en disco,
+            // así evitamos depender de que nginx proxee /uploads al backend.
+            try {
+                let realPath = null;
+                if (fileMatch) {
+                    realPath = path.join(uploadsDir, fileMatch);
+                } else {
+                    const fallback = path.join(uploadsDir, nombreFoto);
+                    if (fs.existsSync(fallback)) realPath = fallback;
+                }
+                if (realPath && fs.existsSync(realPath)) {
+                    const imgBuffer = fs.readFileSync(realPath);
+                    const ext = path.extname(realPath).toLowerCase();
+                    const mime = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'image/png';
+                    final_url = `data:${mime};base64,${imgBuffer.toString('base64')}`;
+                } else if (fileMatch) {
+                    // último recurso: ruta relativa en /uploads (si proxy está correctamente configurado)
+                    final_url = `/uploads/${fileMatch}`;
+                }
+            } catch (e) {
+                console.warn('[getCredencialPage] no se pudo leer imagen desde disco:', e && e.message ? e.message : e);
+                if (fileMatch) final_url = `/uploads/${fileMatch}`;
             }
         }
 
@@ -590,17 +707,23 @@ exports.getCredencialPage = async (req, res) => {
             console.warn('No se pudo determinar/crear columna activo en servidores:', e.message);
         }
 
-        // Construir URL de la página y QR (apunta a esta misma vista)
+        // Detectar si la vista fue solicitada desde un escaneo de QR (añadimos ?scan=1 al QR)
+        const scanFlag = req.query && (req.query.scan === '1' || req.query.scan === 'true');
+
+        // Construir URL de la página y QR (apunta a esta misma vista con ?scan=1)
         const pageUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+        const qrTarget = pageUrl + (pageUrl.includes('?') ? '&' : '?') + 'scan=1';
+
         // Generar QR en el servidor si es posible (mejor disponibilidad y sin depender de servicios externos)
-        let qrSrc;
+        let qrSrc = null;
         try {
             const QRCode = require('qrcode');
-            qrSrc = await QRCode.toDataURL(pageUrl, { width: 220 });
+            // QR mostrado en la página pública debe apuntar a la misma vista pero forzando scan=1
+            qrSrc = await QRCode.toDataURL(qrTarget, { width: 220 });
         } catch (e) {
             // Si la dependencia no está instalada o falla, volver al servicio externo
             console.warn('QR local no disponible, usando Google Charts como fallback:', e && e.message);
-            qrSrc = `https://chart.googleapis.com/chart?chs=220x220&cht=qr&chl=${encodeURIComponent(pageUrl)}`;
+            qrSrc = `https://chart.googleapis.com/chart?chs=220x220&cht=qr&chl=${encodeURIComponent(qrTarget)}`;
         }
 
         // Determinar sello según la institución
@@ -657,12 +780,12 @@ exports.getCredencialPage = async (req, res) => {
                                 </div>
                                 <div class="info-right">
                                     <img src="${final_url}" class="photo" alt="Foto de ${row.nombres} ${row.apellidos}" />
-                                    <div style="margin-top:10px">
+                                    ${scanFlag ? '' : (`<div style="margin-top:10px">
                                         <img src="${selloImg}" alt="Sello" style="width:110px;height:100px;object-fit:contain;display:block;margin:6px auto;filter:brightness(0.8) contrast(1.2)" />
                                     </div>
                                     <div style="margin-top:8px">
                                         <img src="${qrSrc}" alt="QR" style="width:120px;height:120px;object-fit:contain;border:1px solid #e6eef6;border-radius:6px;display:block;margin:6px auto;background:#fff;padding:6px" />
-                                    </div>
+                                    </div>`) }
                                 </div>
                             </div>
                         </div>
@@ -3075,11 +3198,60 @@ exports.serverState = async (req, res) => {
 
 exports.massUploadSinglePhoto = async (req, res) => {
     const fs = require('fs');
-    const { cedula } = req.params;
+    const { cedula: rawCedula } = req.params;
     const fotoPath = req.file ? req.file.path : null;
 
     if (!fotoPath) {
         return res.status(400).json({ error: 'No se ha subido ningún archivo.' });
+    }
+
+    const originalName = req.file ? req.file.originalname : '';
+    
+    // Lógica de extracción de cédula robusta
+    let cleanCedula = (rawCedula || '').toString().trim();
+    if (!/^\d+$/.test(cleanCedula) || cleanCedula === 'nocedula' || cleanCedula === 'undefined') {
+        const baseName = (originalName || cleanCedula).replace(/\.[^/.]+$/, "");
+        if (baseName.includes('_')) {
+            const parts = baseName.split('_');
+            const lastPart = parts[parts.length - 1];
+            const clean = lastPart.replace(/\D/g, '');
+            if (clean) cleanCedula = clean;
+        } else {
+            const clean = baseName.replace(/\D/g, '');
+            if (clean) cleanCedula = clean;
+        }
+    }
+
+    if (!cleanCedula || !/^\d+$/.test(cleanCedula)) {
+        try { fs.unlinkSync(fotoPath); } catch (e) { }
+        // Registrar en BD y archivos error de no_cedula_en_nombre
+        const client = await pool.connect();
+        try {
+            const now = new Date().toISOString();
+            const rechazadas = [{ timestamp: now, user_id: req.userId || null, file: originalName || null, cedula: cleanCedula || null, reason: 'no_cedula_en_nombre' }];
+            const latestObj = { generated_at: now, user_id: req.userId || null, total_files: 1, resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas } };
+            const uploadsDir = path.join(__dirname, '../uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+            const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+            try { fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8'); } catch (e) { }
+            try { fs.appendFileSync(historyPath, rechazadas.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8'); } catch (e) { }
+            
+            const uploadRes = await client.query(
+                'INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id',
+                [req.userId || null, 1, JSON.stringify(latestObj.resultado)]
+            );
+            const uploadId = uploadRes.rows[0].id;
+            await client.query(
+                'INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)',
+                [uploadId, originalName || null, cleanCedula || null, 'no_cedula_en_nombre', null]
+            );
+        } catch (dbErr) {
+            console.warn('Error saving no_cedula_en_nombre in DB:', dbErr);
+        } finally {
+            client.release();
+        }
+        return res.status(400).json({ error: 'El nombre del archivo no es una cédula válida.' });
     }
 
     const client = await pool.connect();
@@ -3088,11 +3260,37 @@ exports.massUploadSinglePhoto = async (req, res) => {
 
         // 1. Verificar si el servidor existe
         const queryExists = 'SELECT id FROM servidores WHERE cedula = $1';
-        const existsRes = await client.query(queryExists, [cedula]);
+        const existsRes = await client.query(queryExists, [cleanCedula]);
         if (existsRes.rows.length === 0) {
-            console.log('Cédula no encontrada en carga masiva:', cedula);
+            console.log('Cédula no encontrada en carga masiva:', cleanCedula);
             await client.query('ROLLBACK');
             try { fs.unlinkSync(fotoPath); } catch (e) { }
+            // Registrar el rechazo en archivos y en BD para que el frontend pueda mostrarlo
+            try {
+                const uploadsDir = path.join(__dirname, '../uploads');
+                if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+                const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+                const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+                const now = new Date().toISOString();
+                const rechazadas = [{ timestamp: now, user_id: req.userId || null, file: originalName || null, cedula: cleanCedula, reason: 'servidor_no_encontrado' }];
+                const latestObj = { generated_at: now, user_id: req.userId || null, total_files: 1, resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas } };
+                try { fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8'); } catch (e) { console.warn('No se pudo escribir latestPath for single upload:', e); }
+                try { fs.appendFileSync(historyPath, rechazadas.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8'); } catch (e) { }
+                // Insertar en BD
+                try {
+                    const uploadRes = await client.query(
+                        'INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id',
+                        [req.userId || null, 1, JSON.stringify({ procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas })]
+                    );
+                    const uploadId = uploadRes.rows[0].id;
+                    for (const r of rechazadas) {
+                        await client.query(
+                            'INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)',
+                            [uploadId, r.file || null, r.cedula || null, r.reason || null, null]
+                        );
+                    }
+                } catch (dbErr) { console.warn('No se pudo insertar single upload rejection in BD:', dbErr && dbErr.message ? dbErr.message : dbErr); }
+            } catch (e) { console.warn('Error registrando rechazo single upload:', e); }
             return res.status(404).json({ error: 'La cédula de la foto que intenta cargar no se encuentra registrada en servidores, para cargar la foto se debe registrar primero el servidor.' });
         }
 
@@ -3133,13 +3331,164 @@ exports.massUploadSinglePhoto = async (req, res) => {
         }
 
         await client.query('COMMIT');
-        return res.json({ success: true, message: 'Foto cargada correctamente.', cedula });
+        return res.json({ success: true, message: 'Foto cargada correctamente.', cedula: cleanCedula });
     } catch (error) {
         await client.query('ROLLBACK');
         try { fs.unlinkSync(fotoPath); } catch (e) { }
         console.error('Error en massUploadSinglePhoto:', error);
+        // Registrar el error en archivos y BD para visibilidad en el modal
+        try {
+            const uploadsDir = path.join(__dirname, '../uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+            const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+            const now = new Date().toISOString();
+            const rechazadas = [{ timestamp: now, user_id: req.userId || null, file: originalName || null, cedula: cleanCedula || null, reason: 'error_interno' }];
+            const latestObj = { generated_at: now, user_id: req.userId || null, total_files: 1, resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas } };
+            try { fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8'); } catch (e) { console.warn('No se pudo escribir latestPath on exception:', e); }
+            try { fs.appendFileSync(historyPath, rechazadas.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8'); } catch (e) { }
+            try {
+                const uploadRes = await client.query(
+                    'INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id',
+                    [req.userId || null, 1, JSON.stringify({ procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas })]
+                );
+                const uploadId = uploadRes.rows[0].id;
+                for (const r of rechazadas) {
+                    await client.query(
+                        'INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)',
+                        [uploadId, r.file || null, r.cedula || null, r.reason || null, null]
+                    );
+                }
+            } catch (dbErr) { console.warn('No se pudo insertar single upload error in BD:', dbErr && dbErr.message ? dbErr.message : dbErr); }
+        } catch (e) { console.warn('Error registrando single upload exception:', e); }
         return res.status(500).json({ error: 'Error interno al procesar la foto.' });
     } finally {
         client.release();
     }
 };
+
+// Registrar intento fallido de carga de fotos desde el frontend
+exports.logFailedAttempt = async (req, res) => {
+    const { file_name, reason, cedula } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const now = new Date().toISOString();
+        const rechazadas = [{ timestamp: now, user_id: req.userId || null, file: file_name || null, cedula: cedula || null, reason: reason || 'error_validacion' }];
+        
+        // Escribir en archivos error logs
+        try {
+            const fs = require('fs');
+            const uploadsDir = path.join(__dirname, '../uploads');
+            if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+            const latestPath = path.join(uploadsDir, 'mass_upload_errors_latest.json');
+            const historyPath = path.join(uploadsDir, 'mass_upload_errors_history.log');
+            const latestObj = { generated_at: now, user_id: req.userId || null, total_files: 1, resultado: { procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas } };
+            fs.writeFileSync(latestPath, JSON.stringify(latestObj, null, 2), 'utf8');
+            fs.appendFileSync(historyPath, rechazadas.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+        } catch (fileErr) {
+            console.warn('No se pudo escribir archivo de errores en logFailedAttempt:', fileErr);
+        }
+
+        const uploadRes = await client.query(
+            'INSERT INTO mass_uploads (user_id, total_files, summary) VALUES ($1, $2, $3) RETURNING id',
+            [req.userId || null, 1, JSON.stringify({ procesadas: 0, insertadas: [], actualizadas: [], rechazadas: rechazadas })]
+        );
+        const uploadId = uploadRes.rows[0].id;
+        for (const r of rechazadas) {
+            await client.query(
+                'INSERT INTO mass_upload_errors (upload_id, file_name, cedula, reason, details) VALUES ($1, $2, $3, $4, $5)',
+                [uploadId, r.file || null, r.cedula || null, r.reason || null, null]
+            );
+        }
+        await client.query('COMMIT');
+        return res.status(200).json({ success: true });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error en logFailedAttempt:', error);
+        return res.status(500).json({ error: 'Error al registrar error de carga.' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener historial de errores desde la BD (más recientes primero, agrupado por archivo mostrando el primer intento)
+exports.getMassUploadHistory = async (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 200;
+    const client = await pool.connect();
+    try {
+        const q = `
+            WITH latest_attempts AS (
+                SELECT DISTINCT ON (e.file_name) 
+                       e.id, e.upload_id, e.file_name, e.cedula, e.reason, e.details, e.created_at, 
+                       COALESCE(u.email, CAST(m.user_id AS TEXT)) AS user_id, m.total_files
+                FROM mass_upload_errors e
+                JOIN mass_uploads m ON e.upload_id = m.id
+                LEFT JOIN users u ON m.user_id = u.id
+                ORDER BY e.file_name, e.created_at DESC
+            )
+            SELECT * FROM latest_attempts
+            ORDER BY created_at DESC
+            LIMIT $1
+        `;
+        const result = await client.query(q, [limit]);
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('Error en getMassUploadHistory:', err);
+        res.status(500).json({ error: 'Error al obtener el historial de errores.' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener el último upload (resumen) desde la BD con sus errores
+exports.getMassUploadLatestDB = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const q = `
+            SELECT m.id, COALESCE(u.email, CAST(m.user_id AS TEXT)) AS user_id, m.total_files, m.summary, m.created_at,
+                   (SELECT json_agg(json_build_object('file', e.file_name, 'cedula', e.cedula, 'reason', e.reason, 'created_at', e.created_at) ORDER BY e.created_at DESC)
+                    FROM mass_upload_errors e WHERE e.upload_id = m.id) AS errors
+            FROM mass_uploads m
+            LEFT JOIN users u ON m.user_id = u.id
+            ORDER BY m.created_at DESC
+            LIMIT 1
+        `;
+        const result = await client.query(q);
+        if (result.rows.length === 0) {
+            // Devolver objeto vacío en lugar de 404 para que el cliente pueda manejar la ausencia de registros
+            return res.status(200).json({ id: null, user_id: null, total_files: 0, summary: null, created_at: null, errors: [] });
+        }
+        return res.status(200).json(result.rows[0]);
+    } catch (err) {
+        console.error('Error en getMassUploadLatestDB:', err);
+        res.status(500).json({ error: 'Error al obtener el último resumen de carga masiva.' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener historial de errores para un archivo específico (por nombre original)
+exports.getMassUploadErrorsByFile = async (req, res) => {
+    const fileName = req.query.name;
+    if (!fileName) return res.status(400).json({ error: 'Se requiere el parámetro name' });
+    const client = await pool.connect();
+    try {
+        const q = `
+            SELECT e.id, e.upload_id, e.file_name, e.cedula, e.reason, e.details, e.created_at, 
+                   COALESCE(u.email, CAST(m.user_id AS TEXT)) AS user_id, m.total_files
+            FROM mass_upload_errors e
+            JOIN mass_uploads m ON e.upload_id = m.id
+            LEFT JOIN users u ON m.user_id = u.id
+            WHERE e.file_name = $1
+            ORDER BY e.created_at DESC
+        `;
+        const result = await client.query(q, [fileName]);
+        return res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('Error en getMassUploadErrorsByFile:', err);
+        return res.status(500).json({ error: 'Error al obtener el historial por archivo.' });
+    } finally {
+        client.release();
+    }
+};// Restart trigger
