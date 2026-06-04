@@ -187,6 +187,11 @@ router.get('/cargar_fotos_masivas/errors/file', authenticate, authorize('update_
 // Último resumen desde la BD (incluye errores asociados)
 router.get('/cargar_fotos_masivas/errors/latest_db', authenticate, authorize('update_servidor'), getMassUploadLatestDB);
 router.post('/cargar_fotos_masivas/log_failed_attempt', authenticate, authorize('update_servidor'), logFailedAttempt);
+// Rutas para errores de carga masiva de SERVIDORES (CSV/XLSX)
+router.post('/cargar_servidores_masivos/log_failed_row', authenticate, authorize('create_servidor'), require('./controllers').logServerFailedRow);
+router.get('/cargar_servidores_masivos/errors/history', authenticate, authorize('read_servidor'), require('./controllers').getServerMassUploadHistory);
+router.get('/cargar_servidores_masivos/errors/latest_db', authenticate, authorize('read_servidor'), require('./controllers').getServerMassUploadLatestDB);
+router.get('/cargar_servidores_masivos/errors/file', authenticate, authorize('read_servidor'), require('./controllers').getServerMassUploadErrorsByFile);
 router.post('/actualizar_masiva_servidor', authenticate, authorize('update_servidor'), massUpdateServer);
 router.get('/servidores_estadisticas', authenticate, authorize('read_servidor'), serverStatistics);
 router.get('/adultos_horas', elderHour);

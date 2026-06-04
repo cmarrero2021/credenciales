@@ -32,20 +32,21 @@
         <img :src="getFotoUrl(trabajador.foto_url)" class="foto-trabajador" alt="Foto trabajador" />
         <div class="info-stack">
           <div class="nombre">{{ trabajador.nombres }} {{ trabajador.apellidos }}</div>
-          <div class="cedula">{{ trabajador.cedula }}</div>
-          <div class="cargo">{{ trabajador.cargo }}</div>
+         <!-- <div class="cedula">{{ trabajador.cedula }}</div> -->
+        <div class="cargo">{{ trabajador.cargo }}</div>
         </div>
-        <div :class="[
+        <!-- <div :class="[
           trabajador.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + trabajador.nivel,
           isWideFranja(trabajador) ? 'franja-w' : ''
         ]">
           {{ trabajador.condicion === 'JUBILADO' ? 'JUBILADO' : trabajador.abreviacion }}
-        </div>
+        </div> -->
       </div>
 
         
       <!-- Parte trasera -->
       <div class="credencial-preview credencial-trasera">
+        <!-- 
         <div class="contenido-trasero">
           <div class="texto-trasero">
             <p class="parrafo-trasero">
@@ -71,8 +72,13 @@
             <img :src="getFooterFor(trabajador)" alt="Sello" class="sello-img" />
             <QrcodeVue :value="qrUrl" :size="qrSize" level="H" class="qr-code" />
           </div>
-              </div>
-            </div>
+        </div>
+        -->
+        <img src="/img/reverso.png" class="fondo-img-reverso" alt="Reverso carnet" />
+        <div class="qr-container-reverso">
+          <QrcodeVue :value="qrUrl" :size="120" level="H" style="width:100%;height:100%;display:block;" />
+        </div>
+      </div>
             <div class="q-mt-sm">
               <div class="row q-gutter-sm">
                 <div v-if="displayedMatches.length === 0 && (filterCedula || filterNombres || filterApellidos || filterInstitucion || filterSede || filterArea || filterCargo)" class="col-12 text-subtitle2 q-ml-sm text-grey">No hay credenciales con foto filtradas según su búsqueda.</div>
@@ -438,13 +444,14 @@ function buildCredentialHtml(item) {
           <div class="cargo">${cargo}</div>
         </div>
         
-        <div class="${item.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + nivel}${isWideFranja(item) ? ' franja-w' : ''}">
+        <!-- <div class="${item.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + nivel}${isWideFranja(item) ? ' franja-w' : ''}">
           ${item.condicion === 'JUBILADO' ? 'JUBILADO' : franjaText}
-        </div>
+        </div> -->
       </div>
     </div>
     <div class="print-page print-page-back">
       <div class="credencial-preview credencial-trasera">
+        <!--
         <div class="contenido-trasero">
           <div class="texto-trasero">
             <p class="parrafo-trasero"><span class="bullet">•</span> Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</p>
@@ -459,6 +466,9 @@ function buildCredentialHtml(item) {
             <img src="${qrSrc}" class="qr-code" />
           </div>
         </div>
+        -->
+        <img src="/img/reverso.png" class="fondo-img-reverso" />
+        <img src="${qrSrc}" class="qr-code-reverso" />
       </div>
     </div>`
 }
@@ -513,9 +523,9 @@ function openPrintWindow(html) {
     }
     
     .fondo-img { position: absolute; width: 100%; height: 100%; left: 0; top: 0; z-index: 1; object-fit: cover; }
-    .foto-trabajador { position: absolute; width: 19mm; height: 19mm; left: 18mm; top: 18.5mm; object-fit: cover; z-index: 2; border-radius: 3mm; border: 1px solid #888; }
+    .foto-trabajador { position: absolute; width: 22mm; height: 28mm; left: 16.5mm; top: 24.5mm; object-fit: cover; z-index: 2; border-radius: 4mm; border: none; box-sizing: border-box; }
     
-    .info-stack { position: absolute; top: 38.5mm; left: 0; width: 100%; display:flex; flex-direction:column; align-items:center; gap:0mm; padding: 0 4mm; z-index: 4; }
+    .info-stack { position: absolute; top: 54mm; left: 0; width: 100%; display:flex; flex-direction:column; align-items:center; gap:0mm; padding: 0 4mm; z-index: 4; }
     .nombre { text-align:center; display:block; font-size:3.7mm; font-weight:700; line-height:1.05; word-wrap:break-word; margin: 0; width: 100%; }
     .cedula { font-size:5mm; font-weight:700; margin-top:0.3mm; display:block; line-height:1.05; width: 100%; text-align:center; }
     .cargo { font-size:2.8mm; display:block; margin-top:0.5mm; text-align:center; line-height:1.05; width: 100%; }
@@ -537,6 +547,10 @@ function openPrintWindow(html) {
     .sello-img { width:110px; height:100px; object-fit:contain; margin-left:-4mm; margin-top:-1.5mm; max-width: 90px; max-height: 90px; filter: brightness(0.6) contrast(1.4); }
     .qr-code { background:white; padding:1mm; border-radius:2mm; width:24mm; height:24mm; object-fit:contain; display:block; transform: none !important; box-shadow: none; border: 1px solid #ccc; }
     .qr-code img { width:100%; height:100%; object-fit:contain; }
+    
+    .fondo-img-reverso { position: absolute; width: 55mm; height: 85mm; left: 0; top: 0; z-index: 1; object-fit: cover; }
+    .qr-code-reverso { position: absolute; width: 21mm; height: 22mm; left: 30mm; top: 60mm; z-index: 2; background: white; }
+    .qr-code-reverso img, .qr-code-reverso canvas { width: 100% !important; height: 100% !important; object-fit: fill; }
     
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   `
@@ -795,18 +809,19 @@ async function bgReportPrint(cedulaStr) {
 }
 .foto-trabajador {
   position: absolute;
-  width: 19mm;
-  height: 19mm;
-  left: 18mm;
-  top: 18.5mm;
+  width: 22mm;
+  height: 28mm;
+  left: 16.5mm;
+  top: 24.5mm;
   object-fit: cover;
   z-index: 2;
-  border-radius: 3mm;
-  border: 1px solid #888;
+  border-radius: 4mm;
+  border: none;
+  box-sizing: border-box;
 }
 .info-stack {
   position: absolute;
-  top: 38.5mm;
+  top: 54mm;
   left: 0;
   width: 100%;
   display: flex;
@@ -976,5 +991,33 @@ async function bgReportPrint(cedulaStr) {
     display: block !important;
     visibility: visible !important;
   }
+}
+.fondo-img-reverso {
+  position: absolute;
+  width: 55mm;
+  height: 85mm;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  object-fit: cover;
+}
+.qr-container-reverso {
+  position: absolute;
+  left: 52%;
+  top: 60%;
+  width: 40%;
+  height: 31%;
+  z-index: 10;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-container-reverso canvas,
+.qr-container-reverso svg {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  object-fit: contain;
 }
 </style>

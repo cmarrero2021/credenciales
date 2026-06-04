@@ -3492,3 +3492,109 @@ exports.getMassUploadErrorsByFile = async (req, res) => {
         client.release();
     }
 };// Restart trigger
+
+// --- NUEVAS FUNCIONES: CARGA MASIVA DE SERVIDORES (CSV/XLSX) ---
+// Registrar fila fallida de carga masiva de servidores
+exports.logServerFailedRow = async (req, res) => {
+    const { file_name, row_number, cedula, field_errors, details } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        // Tratar de reusar un upload reciente para el mismo archivo (6 horas)
+        let uploadRes = await client.query('SELECT id FROM server_mass_uploads WHERE file_name = $1 AND created_at > NOW() - INTERVAL \"6 hours\" LIMIT 1', [file_name]);
+        let uploadId = uploadRes.rows[0] && uploadRes.rows[0].id ? uploadRes.rows[0].id : null;
+        if (!uploadId) {
+            const ins = await client.query('INSERT INTO server_mass_uploads (user_id, file_name, total_rows, summary) VALUES ($1, $2, $3, $4) RETURNING id', [req.userId || null, file_name || null, 0, JSON.stringify({ processed: 0, rejected: 0 })]);
+            uploadId = ins.rows[0].id;
+        }
+
+        await client.query('INSERT INTO server_mass_upload_errors (upload_id, row_number, cedula, field_errors, details) VALUES ($1, $2, $3, $4, $5)', [uploadId, row_number || null, cedula || null, field_errors ? (typeof field_errors === 'string' ? JSON.parse(field_errors) : field_errors) : null, details || null]);
+
+        // Actualizar resumen simple en server_mass_uploads (aumentar rechazados)
+        try {
+            await client.query("UPDATE server_mass_uploads SET total_rows = COALESCE(total_rows,0) + 1, summary = jsonb_set(COALESCE(summary, '{}'), '{rejected}', COALESCE((COALESCE(summary->'rejected', '0')::int + 1)::text::jsonb, '1'::jsonb)) WHERE id = $1", [uploadId]);
+        } catch (e) {
+            // fallback: no bloquear
+        }
+
+        await client.query('COMMIT');
+        return res.status(200).json({ success: true, upload_id: uploadId });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error en logServerFailedRow:', err && err.message ? err.message : err);
+        return res.status(500).json({ error: 'Error al registrar fila fallida.' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener historial de errores de carga masiva de servidores (agrupado por archivo)
+exports.getServerMassUploadHistory = async (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 200;
+    const client = await pool.connect();
+    try {
+        const q = `
+            WITH latest_attempts AS (
+                SELECT DISTINCT ON (s.file_name) s.id as upload_id, s.file_name, s.created_at, s.user_id, s.total_rows
+                FROM server_mass_uploads s
+                ORDER BY s.file_name, s.created_at DESC
+            )
+            SELECT * FROM latest_attempts ORDER BY created_at DESC LIMIT $1
+        `;
+        const result = await client.query(q, [limit]);
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('Error en getServerMassUploadHistory:', err);
+        res.status(500).json({ error: 'Error al obtener el historial de errores (servidores).' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener último resumen (incluye errores) de carga de servidores
+exports.getServerMassUploadLatestDB = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const q = `
+            SELECT s.id, COALESCE(u.email, CAST(s.user_id AS TEXT)) AS user_id, s.total_rows, s.summary, s.created_at,
+                   (SELECT json_agg(json_build_object('row_number', e.row_number, 'cedula', e.cedula, 'field_errors', e.field_errors, 'details', e.details, 'created_at', e.created_at) ORDER BY e.created_at DESC)
+                    FROM server_mass_upload_errors e WHERE e.upload_id = s.id) AS errors
+            FROM server_mass_uploads s
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY s.created_at DESC
+            LIMIT 1
+        `;
+        const result = await client.query(q);
+        if (result.rows.length === 0) return res.status(200).json({ id: null, user_id: null, total_rows: 0, summary: null, created_at: null, errors: [] });
+        return res.status(200).json(result.rows[0]);
+    } catch (err) {
+        console.error('Error en getServerMassUploadLatestDB:', err);
+        res.status(500).json({ error: 'Error al obtener el último resumen de carga masiva (servidores).' });
+    } finally {
+        client.release();
+    }
+};
+
+// Obtener historial de errores para un archivo específico (por nombre original)
+exports.getServerMassUploadErrorsByFile = async (req, res) => {
+    const fileName = req.query.name;
+    if (!fileName) return res.status(400).json({ error: 'Se requiere el parámetro name' });
+    const client = await pool.connect();
+    try {
+        const q = `
+            SELECT e.id, e.upload_id, e.row_number, e.cedula, e.field_errors, e.details, e.created_at, COALESCE(u.email, CAST(s.user_id AS TEXT)) AS user_id
+            FROM server_mass_upload_errors e
+            JOIN server_mass_uploads s ON e.upload_id = s.id
+            LEFT JOIN users u ON s.user_id = u.id
+            WHERE s.file_name = $1
+            ORDER BY e.created_at DESC
+        `;
+        const result = await client.query(q, [fileName]);
+        return res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('Error en getServerMassUploadErrorsByFile:', err);
+        return res.status(500).json({ error: 'Error al obtener el historial por archivo (servidores).' });
+    } finally {
+        client.release();
+    }
+};
