@@ -133,3 +133,51 @@ exports.checkBlacklist = async (req, res, next) => {
         client.release();
     }
 };
+
+// Middleware opcional: si el token está presente lo valida, si no, continúa como anónimo
+exports.optionalAuthenticate = async (req, res, next) => {
+    const authHeader = req.header('Authorization')
+        || req.header('authorization')
+        || req.header('X-Authorization')
+        || req.header('x-authorization');
+
+    const token = authHeader?.split(' ')[1] || req.header('x-access-token') || req.query.token;
+    // Si no hay token, permitimos continuar como anónimo
+    if (!token) {
+        req.userId = null;
+        return next();
+    }
+
+    try {
+        const blacklistResult = await pool.query('SELECT * FROM blacklisted_tokens WHERE token = $1 AND expires_at > NOW()', [token]);
+        if (blacklistResult.rows.length) {
+            return res.status(401).json({ error: 'Sesión expirada. Por favor, inicia sesión nuevamente.' });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.userId = decoded.userId;
+
+        const sessionResult = await pool.query(
+            'SELECT expires_at FROM sessions WHERE token = $1 AND is_revoked = FALSE',
+            [token]
+        );
+        if (!sessionResult.rows.length) {
+            req.userId = null; // tratar como anónimo
+            return next();
+        }
+
+        const expiresAt = sessionResult.rows[0].expires_at;
+        if (new Date(expiresAt) < new Date()) {
+            return res.status(401).json({ error: 'Sesión expirada. Por favor, inicia sesión nuevamente.' });
+        }
+
+        return next();
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            try { await pool.query('UPDATE login_logs SET logout_type = $1, logout_timestamp = NOW() WHERE session_token = $2', ['expired', token]); } catch (_) {}
+            return res.status(401).json({ error: 'La sesión ha expirado. Por favor, inicia sesión nuevamente.' });
+        }
+        // En caso de token inválido, tratamos como anónimo en lugar de bloquear
+        req.userId = null;
+        return next();
+    }
+};

@@ -75,7 +75,7 @@
         </div>
         -->
         <img src="/img/reverso.png" class="fondo-img-reverso" alt="Reverso carnet" />
-        <div class="qr-container-reverso">
+        <div class="qr-code-reverso">
           <QrcodeVue :value="qrUrl" :size="120" level="H" style="width:100%;height:100%;display:block;" />
         </div>
       </div>
@@ -92,7 +92,7 @@
           <q-badge color="secondary" label="Trabajador: Activo" v-if="trabajador?.trabajador_activo !== false && trabajador?.trabajador_activo !== null" />
           <q-badge color="negative" label="Trabajador: Inactivo" v-else-if="trabajador?.trabajador_activo === false" />
         </div>
-        <div><b>Cédula:</b> {{ trabajador.cedula }}</div>
+       <!-- <div><b>Cédula:</b> {{ trabajador.cedula }}</div> -->
         <div><b>Nombres:</b> {{ trabajador.nombres }}</div>
         <div><b>Apellidos:</b> {{ trabajador.apellidos }}</div>
         <div><b>Institución:</b> {{ trabajador.institucion || trabajador.institucion }}</div>
@@ -440,7 +440,7 @@ function buildCredentialHtml(item) {
         <img src="${foto}" class="foto-trabajador" crossorigin="anonymous" />
         <div class="info-stack">
           <div class="nombre">${displayNombres} ${displayApellidos}</div>
-          <div class="cedula">${ced}</div>
+          <!-- <div class="cedula">${ced}</div> -->
           <div class="cargo">${cargo}</div>
         </div>
         
@@ -526,9 +526,9 @@ function openPrintWindow(html) {
     .foto-trabajador { position: absolute; width: 22mm; height: 28mm; left: 16.5mm; top: 24.5mm; object-fit: cover; z-index: 2; border-radius: 4mm; border: none; box-sizing: border-box; }
     
     .info-stack { position: absolute; top: 54mm; left: 0; width: 100%; display:flex; flex-direction:column; align-items:center; gap:0mm; padding: 0 4mm; z-index: 4; }
-    .nombre { text-align:center; display:block; font-size:3.7mm; font-weight:700; line-height:1.05; word-wrap:break-word; margin: 0; width: 100%; }
+    .nombre { text-align:center; display:block; font-size:3.7mm; font-weight:700; line-height:1.05; word-wrap:break-word; margin: 0; width: 100%; color: #0A124F; }
     .cedula { font-size:5mm; font-weight:700; margin-top:0.3mm; display:block; line-height:1.05; width: 100%; text-align:center; }
-    .cargo { font-size:2.8mm; display:block; margin-top:0.5mm; text-align:center; line-height:1.05; width: 100%; }
+    .cargo { font-size:2.8mm; display:block; margin-top:0.5mm; text-align:center; line-height:1.05; width: 100%; color: #4C4847; }
     .unidad { display:block; font-size:2.6mm; color:#222; margin-top:0.2mm; }
     
     .franja1, .franja2, .franja3 { position: absolute; top: 60mm; left: 0; width: 55mm; text-align: center; font-size: 5.6mm; font-weight: 700; z-index: 3; }
@@ -549,8 +549,8 @@ function openPrintWindow(html) {
     .qr-code img { width:100%; height:100%; object-fit:contain; }
     
     .fondo-img-reverso { position: absolute; width: 55mm; height: 85mm; left: 0; top: 0; z-index: 1; object-fit: cover; }
-    .qr-code-reverso { position: absolute; width: 21mm; height: 22mm; left: 30mm; top: 60mm; z-index: 2; background: white; }
-    .qr-code-reverso img, .qr-code-reverso canvas { width: 100% !important; height: 100% !important; object-fit: fill; }
+    .qr-code-reverso { position: absolute; width: 35%; height: 28%; left: 54%; top: 61%; z-index: 2; background: white; display: flex; align-items: center; justify-content: center; }
+    .qr-code-reverso img, .qr-code-reverso canvas { width: 100% !important; height: 100% !important; object-fit: contain; }
     
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   `
@@ -786,6 +786,7 @@ async function bgReportPrint(cedulaStr) {
   width: 55mm;
   height: 85mm;
   position: relative;
+  overflow: hidden;
   border: 1px solid #ccc;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   background: #fff;
@@ -1001,20 +1002,21 @@ async function bgReportPrint(cedulaStr) {
   z-index: 1;
   object-fit: cover;
 }
-.qr-container-reverso {
+.qr-code-reverso {
   position: absolute;
-  left: 52%;
-  top: 60%;
-  width: 40%;
-  height: 31%;
+  left: 54%;
+  top: 61%;
+  width: 35%;
+  height: 28%;
   z-index: 10;
   background: white;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.qr-container-reverso canvas,
-.qr-container-reverso svg {
+.qr-code-reverso :deep(canvas),
+.qr-code-reverso :deep(svg),
+.qr-code-reverso :deep(img) {
   width: 100% !important;
   height: 100% !important;
   display: block !important;
