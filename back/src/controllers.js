@@ -430,7 +430,7 @@ exports.listServers = async (req, res) => {
 
         const result = await client.query(`
             SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
-                   a.nombres || ' ' || a.apellidos as nombres, a.cargo_id, a.cargo,
+                   a.nombres as nombres, a.apellidos as apellidos, a.cargo_id, a.cargo,
                    f.foto_url, s.condicion
             FROM vservidores a
             LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id

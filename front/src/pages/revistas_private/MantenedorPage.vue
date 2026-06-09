@@ -822,16 +822,22 @@ async function printBatchServidores(size = null) {
         const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrBaseUrl + ced)}`
 
         // Frontal
-        html.push(`<div class="cred"><div class="fondo"><img src="/img/frontal_carnet.png" style="width:55mm;height:85mm;position:absolute;left:0;top:0"/>`)
+        const fondoUrl = getFondoFor_item(r)
+        html.push(`<div class="cred"><div class="fondo"><img src="${fondoUrl}" style="width:55mm;height:85mm;position:absolute;left:0;top:0"/>`)
         html.push(`<img class="foto" src="${foto}" alt="foto"/>`)
         html.push(`<div class="nombre">${nombres} ${apellidos}</div>`)
         html.push(`<div class="cedula">${ced}</div>`)
         html.push(`<div class="cargo">${cargo}</div>`)
         html.push('</div></div>')
 
-        // Trasera
+        // Trasera: usar imagen específica para INASS o el texto + sello para el Ministerio
         const footerImg = getFooterFor_item(r)
-        html.push(`<div class="cred"><div class="back"><div style="font-size:2.3mm;color:#2c3e50">• Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</div><div style="position:relative;height:100%"><img src="${footerImg}" style="width:110px;height:100px;object-fit:contain;margin-left:-4mm;margin-top:-1.5mm;max-width:90px;max-height:90px;" /><img class="qr" src="${qrImg}" /></div></div></div>`)
+        if (isINASS_item(r)) {
+          // Para INASS usamos una imagen completa de reverso si está disponible
+          html.push(`<div class="cred"><div class="back"><img src="/img/reverso_inass.png" style="width:55mm;height:85mm;position:absolute;left:0;top:0;" /><img class="qr" src="${qrImg}" style="position:absolute;right:6mm;bottom:6mm;width:18mm;height:18mm;"/></div></div>`)
+        } else {
+          html.push(`<div class="cred"><div class="back"><div style="font-size:2.3mm;color:#2c3e50">• Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular para los Adultos y Adultas Mayores Abuelos y Abuelas de la Patria</div><div style="position:relative;height:100%"><img src="${footerImg}" style="width:110px;height:100px;object-fit:contain;margin-left:-4mm;margin-top:-1.5mm;max-width:90px;max-height:90px;" /><img class="qr" src="${qrImg}" /></div></div></div>`)
+        }
       }
       html.push('</div></body></html>')
 
@@ -1040,7 +1046,7 @@ async function generatePdfBatch(size = null) {
 
   const frontHtml = `
         <div class="credencial-preview credencial-frontal">
-          <img class="fondo-img" src="/img/frontal_carnet.png" />
+          <img class="fondo-img" src="${getFondoFor_item(r)}" />
           <img class="foto-trabajador" src="${getFotoUrl(r.foto_url)}" />
           <div class="nombre">${(r.nombres || '') + ' ' + (r.apellidos || '')}</div>
           <div class="cedula">${r.cedula || ''}</div>
@@ -1206,6 +1212,33 @@ const getFooterFor_item = (item) => {
     return '/img/inass_sello_firma.png';
   }
   return '/img/ministerio_sello_firma.png';
+};
+
+// Selección dinámica del frontal del carnet según institución y adscripción (seguridad / comunicaciones).
+// Se esperan las siguientes imágenes en `front/public/img`:
+// - frontal_carnet.png (frontal por defecto - Ministerio)
+// - frontal_carnet_inass1.png (frontal por defecto - INASS)
+// - frontal_seguridad_ministerio.png
+// - frontal_comunicaciones_ministerio.png
+// - frontal_seguridad_inass.png
+// - frontal_comunicaciones_inass.png
+const getFondoFor_item = (item) => {
+  const rawArea = (item?.area || item?.unidad || item?.adscripcion || '').toString();
+  const area = rawArea.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  const isInass = isINASS_item(item);
+
+  const seguridadKeywords = ['seguridad', 'direccion general de la oficina de seguridad'];
+  const comunicacionKeywords = ['comunic', 'gesti', 'comunicacional', 'comunicaciones', 'gestion comunicacional', 'prensa'];
+
+  if (seguridadKeywords.some(k => area.includes(k))) {
+    return isInass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png';
+  }
+  if (comunicacionKeywords.some(k => area.includes(k))) {
+    return isInass ? '/img/frontal_prensa_inass.png' : '/img/frontal_prensa_ministerio.png';
+  }
+
+  // Default: INASS has its own frontal image, otherwise use the ministry frontal
+  return isInass ? '/img/frontal_carnet_inass1.png' : '/img/frontal_carnet.png';
 };
 
 const condicionOptions = computed(() => {

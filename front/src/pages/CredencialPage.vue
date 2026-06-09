@@ -46,35 +46,15 @@
         
       <!-- Parte trasera -->
       <div class="credencial-preview credencial-trasera">
-        <!-- 
-        <div class="contenido-trasero">
-          <div class="texto-trasero">
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> Este carnet es de uso exclusivo para el personal que labora en Ministerio del Poder Popular de Adultos y Adultas Mayores Abuelos y Abuelas de la Patria
-            </p>
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> Debe ser utilizado en un lugar visible
-            </p>
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> Puede ser retenido por la Dirección General de Seguridad cuando lo requiera
-            </p>
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> Es intransferible
-            </p>
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> Se agradece a todas las autoridades Civiles y Militares prestarle la mayor colaboración posible al portador de esta credencial, dentro de las normas legales
-            </p>
-            <p class="parrafo-trasero">
-              <span class="bullet">•</span> En caso de ser transferido a otra dirección o en caso de vencimiento, debe ser entregado
-            </p>
-          </div>
-          <div class="footer-container">
-            <img :src="getFooterFor(trabajador)" alt="Sello" class="sello-img" />
-            <QrcodeVue :value="qrUrl" :size="qrSize" level="H" class="qr-code" />
-          </div>
-        </div>
+        <!--
+          El reverso del carnet puede variar según la institución. Para INASS usamos una imagen de reverso específica
+          (`reverso_inass.png`) que contiene el texto y sello propio del Instituto. Para el Ministerio se mantiene
+          la imagen por defecto (`reverso.png`).
+
+          Comentario: mantenemos el bloque original (descrito arriba) como referencia en caso de querer renderizar
+          el texto del reverso directamente en HTML en lugar de usar una imagen de fondo.
         -->
-        <img src="/img/reverso.png" class="fondo-img-reverso" alt="Reverso carnet" />
+        <img :src="(isINASS(trabajador) ? '/img/reverso_inass.png' : '/img/reverso.png')" class="fondo-img-reverso" alt="Reverso carnet" />
         <div class="qr-code-reverso">
           <QrcodeVue :value="qrUrl" :size="120" level="H" style="width:100%;height:100%;display:block;" />
         </div>
@@ -190,12 +170,23 @@ function isINASS(item) {
 }
 
 function getFondoFor(item) {
-  // Use the provided INASS frontal image when the trabajador belongs to INASS.
-  // Place the attached image in `front/public/img` with this name: `frontal_inass.png`.
-  if (isINASS(item)) {
-    return '/img/frontal_carnet_inass1.png'
+  // Selección dinámica del frontal según institución (INASS vs Ministerio)
+  // y según adscripción (Seguridad / Comunicaciones).
+  const rawArea = (item?.area || item?.unidad || item?.adscripcion || '').toString()
+  const area = rawArea.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  const seguridadKeywords = ['seguridad', 'direccion general de la oficina de seguridad']
+  const comunicacionKeywords = ['comunic', 'gesti', 'comunicacional', 'comunicaciones', 'gestion comunicacional', 'prensa']
+  const inass = isINASS(item)
+
+  if (seguridadKeywords.some(k => area.includes(k))) {
+    return inass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png'
   }
-  return defaultFondoUrl
+  if (comunicacionKeywords.some(k => area.includes(k))) {
+    return inass ? '/img/frontal_prensa_inass.png' : '/img/frontal_comunicaciones_ministerio.png'
+  }
+
+  // Default: INASS has its own frontal image, otherwise use the ministry frontal
+  return inass ? '/img/frontal_carnet_inass1.png' : defaultFondoUrl
 }
 
 function isWideFranja(item) {

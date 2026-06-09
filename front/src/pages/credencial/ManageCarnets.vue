@@ -206,6 +206,24 @@ const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 /*const backendBase = 'https://localhost:3001'*/
 const backendBase = import.meta.env.VITE_API_URL.replace(/\/+$/, '') || 'https://credenciales.minaamp.gob.ve';
 
+// Selección dinámica del frontal del carnet según institución y adscripción (seguridad / comunicaciones).
+function isINASS_item_local(item) {
+  if (!item) return false
+  const name = (item.institucion || item.institucion_nombre || '').toString()
+  return /INSTITUTO NACIONAL DE LOS SERVICIOS SOCIALES/i.test(name)
+}
+
+function getFondoFor_local(item) {
+  const rawArea = (item?.area || item?.unidad || item?.adscripcion || '').toString()
+  const area = rawArea.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  const isInass = isINASS_item_local(item)
+  const seguridadKeywords = ['seguridad', 'direccion general de la oficina de seguridad']
+  const comunicacionKeywords = ['comunic', 'gesti', 'comunicacional', 'comunicaciones', 'gestion comunicacional', 'prensa']
+  if (seguridadKeywords.some(k => area.includes(k))) return backendBase + (isInass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png')
+  if (comunicacionKeywords.some(k => area.includes(k))) return backendBase + (isInass ? '/img/frontal_prensa_inass.png' : '/img/frontal_prensa_ministerio.png')
+  return backendBase + (isInass ? '/img/frontal_carnet_inass1.png' : '/img/frontal_carnet.png')
+}
+
 function prepareExportData() {
   const visibleRows = filteredRows.value.filter(r => {
     if (!filter.value) return true
@@ -820,7 +838,7 @@ async function printBatch() {
       doc.rect(0, 0, 55, 85, 'F')
       // Imagen de fondo (opcional)
       try {
-        const fondoUrl = backendBase + '/img/frontal_carnet.png'
+        const fondoUrl = getFondoFor_local(r)
         const fondoData = await fetchImageAsDataURL(fondoUrl)
         // dibujar fondo que cubra el formato CR80 exacto
         doc.addImage(fondoData, 'PNG', 0, 0, 55, 85)
