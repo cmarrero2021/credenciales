@@ -53,6 +53,12 @@ const {
     getMassUploadLatestDB,
     getMassUploadErrorsByFile,
     logFailedAttempt,
+    logServerFailedRow,
+    getServerMassUploadHistory,
+    getServerMassUploadLatestDB,
+    getServerMassUploadErrorsByFile,
+    listCredentialHistory,
+    getCredencialPage,
 } = require('./controllers');
 const {
     authenticate,
@@ -94,11 +100,11 @@ router.post('/cargar_fotos_masivas/log_failed_attempt', (req, res, next) => {
 // Guardar histórico: requiere autenticación para saber quién imprimió
 router.post('/credencial/historico', authenticate, saveCredentialPrint);
 // Listar histórico de impresiones (protegido)
-router.get('/credencial/historico', authenticate, require('./controllers').listCredentialHistory);
+router.get('/credencial/historico', authenticate, listCredentialHistory);
 // Buscar credencial por cédula (debe ir después de las rutas específicas)
 router.get('/credencial/:cedula', getCredencial);
 // Página pública utilizada por los códigos QR para mostrar información de credenciales
-router.get('/credenciales/cedula=:cedula', require('./controllers').getCredencialPage);
+router.get('/credenciales/cedula=:cedula', getCredencialPage);
 
 // Rutas Protegidas
 router.use(checkBlacklist); // Middleware para verificar tokens en la lista negra
@@ -188,11 +194,11 @@ router.get('/cargar_fotos_masivas/errors/file', authenticate, authorize('update_
 router.get('/cargar_fotos_masivas/errors/latest_db', authenticate, authorize('update_servidor'), getMassUploadLatestDB);
 router.post('/cargar_fotos_masivas/log_failed_attempt', authenticate, authorize('update_servidor'), logFailedAttempt);
 // Rutas para errores de carga masiva de SERVIDORES (CSV/XLSX)
-router.post('/cargar_servidores_masivos/log_failed_row', authenticate, authorize('create_servidor'), require('./controllers').logServerFailedRow);
+router.post('/cargar_servidores_masivos/log_failed_row', authenticate, authorize('create_servidor'), logServerFailedRow);
 // Permitir acceso anónimo de solo lectura a los resúmenes/historiales de errores
-router.get('/cargar_servidores_masivos/errors/history', require('./middlewares').optionalAuthenticate, require('./controllers').getServerMassUploadHistory);
-router.get('/cargar_servidores_masivos/errors/latest_db', require('./middlewares').optionalAuthenticate, require('./controllers').getServerMassUploadLatestDB);
-router.get('/cargar_servidores_masivos/errors/file', require('./middlewares').optionalAuthenticate, require('./controllers').getServerMassUploadErrorsByFile);
+router.get('/cargar_servidores_masivos/errors/history', require('./middlewares').optionalAuthenticate, getServerMassUploadHistory);
+router.get('/cargar_servidores_masivos/errors/latest_db', require('./middlewares').optionalAuthenticate, getServerMassUploadLatestDB);
+router.get('/cargar_servidores_masivos/errors/file', require('./middlewares').optionalAuthenticate, getServerMassUploadErrorsByFile);
 router.post('/actualizar_masiva_servidor', authenticate, authorize('update_servidor'), massUpdateServer);
 router.get('/servidores_estadisticas', authenticate, authorize('read_servidor'), serverStatistics);
 router.get('/adultos_horas', elderHour);
