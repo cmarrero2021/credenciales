@@ -28,8 +28,25 @@ import { boot } from "quasar/wrappers";
 import axios from "axios";
 import { LocalStorage } from "quasar";
 
-const urlBaseEnv = import.meta.env.VITE_API_URL || "https://credenciales.minaamp.gob.ve";
-axios.defaults.baseURL = urlBaseEnv.replace(/\/+$/, '');
+function normalizeApiBase(raw) {
+  let url = (raw || '').toString().trim();
+  if (!url) {
+    url = 'http://localhost:3001';
+  }
+  if (url.startsWith(':')) {
+    url = `http://localhost${url}`;
+  }
+  if (/^localhost:/i.test(url)) {
+    url = `http://${url}`;
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  return url.replace(/\/+$/, '');
+}
+
+const urlBaseEnv = normalizeApiBase(import.meta.env.VITE_API_URL);
+axios.defaults.baseURL = urlBaseEnv;
 
 export default boot(({ app }) => {
   axios.interceptors.request.use((config) => {

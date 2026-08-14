@@ -151,6 +151,7 @@ function formatDate(d) {
 }
 
 const router = useRouter()
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/+$/, '')
 
 async function loadUsers(page = 1, perPage = 10, q = '') {
   // Cancelar solicitud previa si la hubiera
@@ -164,7 +165,7 @@ async function loadUsers(page = 1, perPage = 10, q = '') {
       const params = { page: 1, per_page: 1000 }
       if (q) params.q = q
       console.debug('loadUsers token=', debugToken(), 'params=', params)
-      const resPromise = axios.get(import.meta.env.VITE_API_URL + '/auth/users', { params, signal: currentAbort.controller.signal, timeout: 8000 })
+      const resPromise = axios.get(API_BASE + '/auth/users', { params, signal: currentAbort.controller.signal, timeout: 8000 })
 
     // Seguridad: garantizar que no permanezcamos cargando indefinidamente
     const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('request-timeout')), 12000))
@@ -241,7 +242,7 @@ onBeforeUnmount(() => {
 async function loadRoles() {
   try {
     console.debug('loadRoles token=', debugToken())
-    const res = await axios.get(import.meta.env.VITE_API_URL + '/auth/roles', { timeout: 8000 })
+    const res = await axios.get(API_BASE + '/auth/roles', { timeout: 8000 })
     console.debug('loadRoles response=', res && res.data)
     // el backend puede devolver { roles: [...] } o una matriz directamente
     const data = res && res.data
@@ -291,19 +292,21 @@ async function saveUser() {
     if (isEditing.value) {
       const payload = { first_name: form.value.first_name, last_name: form.value.last_name, cedula: form.value.cedula, email: form.value.email, roles: form.value.roles }
       console.debug('saveUser update token=', debugToken(), 'payload=', payload)
-      await axios.put(import.meta.env.VITE_API_URL + '/auth/users/' + form.value.id, payload)
+      await axios.put(API_BASE + '/auth/users/' + form.value.id, payload)
       Notify.create({ type: 'positive', message: 'Usuario actualizado' })
     } else {
       const payload = { first_name: form.value.first_name, last_name: form.value.last_name, cedula: form.value.cedula, email: form.value.email, password: form.value.password, roles: form.value.roles }
       console.debug('saveUser create token=', debugToken(), 'payload=', payload)
-      await axios.post(import.meta.env.VITE_API_URL + '/auth/users', payload)
+      await axios.post(API_BASE + '/auth/users', payload)
       Notify.create({ type: 'positive', message: 'Usuario creado' })
     }
     dialog.value = false
     await loadUsers(pagination.value.page, pagination.value.rowsPerPage, filter.value)
   } catch (err) {
     console.error('Error guardando usuario', err)
-    Notify.create({ type: 'negative', message: 'Error guardando usuario' })
+    const backendError = err.response?.data?.error
+      || (Array.isArray(err.response?.data?.errors) && err.response?.data?.errors.join(' '))
+    Notify.create({ type: 'negative', message: backendError || 'Error guardando usuario' })
   }
 }
 
@@ -311,7 +314,7 @@ async function removeUser(u) {
   if (!confirm('¿Eliminar usuario? (borrado lógico)')) return
   try {
     console.debug('removeUser token=', debugToken(), 'id=', u.id)
-    await axios.delete(import.meta.env.VITE_API_URL + '/auth/users/' + u.id)
+    await axios.delete(API_BASE + '/auth/users/' + u.id)
     Notify.create({ type: 'positive', message: 'Usuario eliminado' })
     await loadUsers(pagination.value.page, pagination.value.rowsPerPage, filter.value)
   } catch (err) {
@@ -324,7 +327,7 @@ async function toggleStatus(u) {
   try {
     const newStatus = u.status === 'disabled' ? 'active' : 'disabled'
     console.debug('toggleStatus token=', debugToken(), 'id=', u.id, 'newStatus=', newStatus)
-    await axios.put(import.meta.env.VITE_API_URL + '/auth/users/' + u.id, { status: newStatus })
+    await axios.put(API_BASE + '/auth/users/' + u.id, { status: newStatus })
     Notify.create({ type: 'positive', message: 'Estado actualizado' })
     await loadUsers(pagination.value.page, pagination.value.rowsPerPage, filter.value)
   } catch (err) {

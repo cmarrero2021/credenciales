@@ -39,6 +39,10 @@
           <q-item-section avatar><q-icon name="supervisor_account" /></q-item-section>
           <q-item-section>Gestión Usuarios</q-item-section>
         </q-item>
+        <q-item clickable v-ripple to="/catalogos" v-if="hasPermission('view_admin')">
+          <q-item-section avatar><q-icon name="category" /></q-item-section>
+          <q-item-section>Catálogos</q-item-section>
+        </q-item>
       </q-list>
     </q-drawer>
     <q-page-container>

@@ -345,6 +345,7 @@ const procesarArchivo = async () => {
       const sede = r.sede || r.sede_nombre || '';
       const area = r.adscripcion || r.adscripcion_nombre || r.area || '';
       const cargo = r.cargo || '';
+      const fecha_ingreso = r.fecha_ingreso || r.fecha_de_ingreso || r.ingreso || r.fecha || '';
 
       const formData = new FormData();
       formData.append('cedula', ced);
@@ -361,6 +362,7 @@ const procesarArchivo = async () => {
         if (sedeId != null) formData.append('sede_id', sedeId); else if (sede) formData.append('sede', sede);
         if (areaId != null) formData.append('area_id', areaId); else if (area) formData.append('area', area);
         if (cargoId != null) formData.append('cargo_id', cargoId); else if (cargo) formData.append('cargo', cargo);
+        if (fecha_ingreso) formData.append('fecha_ingreso', fecha_ingreso);
       } catch (e) {
         // Fallback: enviar nombres si ocurre algo
         if (institucion) formData.append('institucion', institucion);
@@ -385,7 +387,7 @@ const procesarArchivo = async () => {
         } else {
           try {
             // Enviar como multipart/form-data igual que la inserción individual
-            const resp = await axios.post(insertServerURL, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const resp = await axios.post(insertServerURL, formData);
             results.actualizadas.cedulas.push(cedClean);
             results.actualizadas.cantidad++;
           } catch (err) {

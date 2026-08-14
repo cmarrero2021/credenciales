@@ -27,9 +27,8 @@
       :rows="filteredRows"
       row-key="id"
       :loading="loading"
-      :filter="filter"
       :rows-per-page-options="[10, 20, 50, 0]"
-    
+
       flat
       dense
       class="responsive-table"
@@ -49,6 +48,12 @@
       <template v-slot:body-cell-disabled_at="props">
         <q-td>
           {{ props.row.disabled_at ? (props.row.disabled_at_fmt || props.row.disabled_at) : '-' }}
+        </q-td>
+      </template>
+
+      <template v-slot:body-cell-entregado="props">
+        <q-td align="center">
+          <q-checkbox v-model="props.row.entregado" dense @update:model-value="val => toggleEntregado(props.row, val)" />
         </q-td>
       </template>
 
@@ -193,6 +198,18 @@ const filteredRows = computed(() => {
     const end = new Date(filterDateEnd.value + 'T23:59:59')
     data = data.filter(r => r.created_at && new Date(r.created_at) <= end)
   }
+  if (filter.value) {
+    const q = filter.value.toString().toLowerCase()
+    data = data.filter(r => {
+      return String(r.cedula || '').toLowerCase().includes(q)
+        || String(r.nombres || '').toLowerCase().includes(q)
+        || String(r.apellidos || '').toLowerCase().includes(q)
+        || String(r.cargo || '').toLowerCase().includes(q)
+        || String(r.area || '').toLowerCase().includes(q)
+        || String(r.institucion || '').toLowerCase().includes(q)
+        || String(r.abreviacion || r.institucion_abreviada || '').toLowerCase().includes(q)
+    })
+  }
   return data
 })
 
@@ -220,7 +237,7 @@ function getFondoFor_local(item) {
   const seguridadKeywords = ['seguridad', 'direccion general de la oficina de seguridad']
   const comunicacionKeywords = ['comunic', 'gesti', 'comunicacional', 'comunicaciones', 'gestion comunicacional', 'prensa']
   if (seguridadKeywords.some(k => area.includes(k))) return backendBase + (isInass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png')
-  if (comunicacionKeywords.some(k => area.includes(k))) return backendBase + (isInass ? '/img/frontal_prensa_inass.png' : '/img/frontal_prensa_ministerio.png')
+  if (comunicacionKeywords.some(k => area.includes(k))) return backendBase + (isInass ? '/img/frontal_comunicaciones_inass.png' : '/img/frontal_comunicaciones_ministerio.png')
   return backendBase + (isInass ? '/img/frontal_carnet_inass1.png' : '/img/frontal_carnet.png')
 }
 
@@ -228,9 +245,13 @@ function prepareExportData() {
   const visibleRows = filteredRows.value.filter(r => {
     if (!filter.value) return true
     const q = filter.value.toLowerCase()
-    return String(r.cedula || '').toLowerCase().includes(q) || 
-           String(r.nombres || '').toLowerCase().includes(q) ||
-           String(r.apellidos || '').toLowerCase().includes(q)
+    return String(r.cedula || '').toLowerCase().includes(q)
+      || String(r.nombres || '').toLowerCase().includes(q)
+      || String(r.apellidos || '').toLowerCase().includes(q)
+      || String(r.cargo || '').toLowerCase().includes(q)
+      || String(r.area || '').toLowerCase().includes(q)
+      || String(r.institucion || '').toLowerCase().includes(q)
+      || String(r.institucion_abreviada || r.abreviacion || '').toLowerCase().includes(q)
   })
 
   return visibleRows.map(r => ({
@@ -243,6 +264,7 @@ function prepareExportData() {
     'Impreso por': r.impreso_por || '',
     'Fecha Impresión': r.created_at_fmt || r.created_at || '',
     'Estado': (r.activo === false || !!r.disable_reason || !!r.disabled_at) ? 'Inactivo' : 'Activo',
+    'Entregado': r.entregado ? 'Sí' : 'No',
     'Motivo Inhabilitación': r.disable_reason || r.reason || r.motivo || '',
     'Deshabilitado por': r.disabled_by || '',
   }))
@@ -275,7 +297,7 @@ function exportToPDF() {
     const doc = new jsPDF('landscape')
     const headers = Object.keys(data[0])
     const body = data.map(obj => Object.values(obj).map(v => typeof v === 'string' ? v : String(v || '')))
-    
+
     doc.setFontSize(18)
     doc.setTextColor(40, 40, 40)
     doc.text('Listado de Carnets Impresos', 14, 22)
@@ -308,13 +330,15 @@ const baseColumns = [
   { name: 'cedula', label: 'Cédula', field: 'cedula' },
   { name: 'nombres', label: 'Nombres', field: 'nombres' },
   { name: 'apellidos', label: 'Apellidos', field: 'apellidos' },
+  { name: 'institucion_abreviada', label: 'Institución', field: 'institucion_abreviada' },
   { name: 'cargo', label: 'Cargo', field: 'cargo' },
   { name: 'area', label: 'Adscripción', field: 'area' },
   { name: 'disabled_by', label: 'Deshabilitado por', field: 'disabled_by' },
   { name: 'disable_reason', label: 'Motivo', field: 'disable_reason' },
   { name: 'disabled_at', label: 'Fecha deshabilitación', field: 'disabled_at' },
   { name: 'impreso_por', label: 'Impreso por', field: 'impreso_por' },
-  { name: 'created_at', label: 'Fecha impresión', field: 'created_at', sortable: true }
+  { name: 'created_at', label: 'Fecha impresión', field: 'created_at', sortable: true },
+  { name: 'entregado', label: 'Entregado', field: 'entregado', align: 'center', sortable: true }
 ]
 
    //Determinar si el usuario actual puede ver los botones de acción (RRHH/perfil)
@@ -395,6 +419,24 @@ const availableDisableReasons = computed(() => {
   return allDisableReasons
 })
 const rowToDisable = ref(null)
+
+async function toggleEntregado(row, val) {
+  try {
+    const token = getToken()
+    await axios.patch(`${apiBase}/auth/credencial/historico/${row.id}/entregado`, { entregado: val }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    Notify.create({
+      type: 'positive',
+      message: val ? 'Carnet marcado como entregado' : 'Carnet marcado como pendiente de entrega',
+      timeout: 1500
+    })
+  } catch (err) {
+    console.error('Error toggling entregado:', err)
+    row.entregado = !val // revert state in UI
+    Notify.create({ type: 'negative', message: 'Error al cambiar estado de entrega' })
+  }
+}
 
 function disableRow(row) {
   rowToDisable.value = row
@@ -497,7 +539,7 @@ async function enableRow(row) {
       }
 
       Notify.create({ type: 'positive', message: 'Servidor habilitado' })
-      // Actualizar en segundo plano con un breve retraso para permitir que la base de datos se estabilice. 
+      // Actualizar en segundo plano con un breve retraso para permitir que la base de datos se estabilice.
       setTimeout(() => { loadData().catch(e => console.warn('Background loadData failed:', e)) }, 800)
     } catch (e) {
       console.warn('Could not fetch fresh credencial after enable, falling back to optimistic update:', e)
@@ -572,7 +614,7 @@ async function loadData() {
       loading.value = false
       return
     }
-  
+
     const res = await axios.get(`${apiBase}/auth/credencial/historico?_=${Date.now()}`, { headers: { Authorization: `Bearer ${token}` } }) // endpoint protegido
     const data = Array.isArray(res.data) ? res.data : []
     // Ayuda para normalizar "quién deshabilitado" y convertirlo en un nombre legible.
@@ -581,7 +623,7 @@ async function loadData() {
       if (typeof obj === 'string') return obj
       const candidates = []
       const pushIf = v => { if (v && typeof v === 'string') candidates.push(v) }
-      
+
       pushIf(obj.name)
       pushIf(obj.full_name)
       pushIf(obj.display_name)
@@ -619,6 +661,12 @@ async function loadData() {
       const disable_reason = r.disable_reason || r.reason || r.motivo || null
       const disabled_at = r.disabled_at || r.fecha_deshabilitado || null
       const trabajador_activo = (r.trabajador_activo !== undefined) ? r.trabajador_activo : (r.servidor_activo !== undefined ? r.servidor_activo : null)
+      const institucionNombre = String(r.institucion || r.institucion_nombre || r.institucion_text || '').trim()
+      const isInass = /INSTITUTO\s+NACIONAL\s+DE\s+LOS\s+SERVICIOS\s+SOCIALES/i.test(institucionNombre)
+      const isMinaamp = /MINISTERIO\s+DEL\s+PODER\s+POPULAR|MINAAMP|ADULTOS\s+Y\s+ADULTAS\s+MAYORES/i.test(institucionNombre)
+      const institucion_abreviada = isInass ? 'INASS'
+        : isMinaamp ? 'MINAAMP'
+        : (r.abreviacion || r.institucion_abreviada || (institucionNombre ? institucionNombre.split(' ').map(w => w[0]).join('').toUpperCase() : null))
 
       // Determinar si esta fila representa una credencial deshabilitada/inactiva.
       const rowIsDisabled = (activo === false) || !!(disable_reason) || !!(disabled_at)
@@ -642,6 +690,7 @@ async function loadData() {
         area,
         area_id,
         institucion,
+        institucion_abreviada,
         impreso_por_id,
         impreso_por_first,
         impreso_por_last,
@@ -654,7 +703,8 @@ async function loadData() {
         disable_reason,
         disabled_at,
         disabled_at_fmt: (disabled_at) ? formatDateDDMMYYYYHHmm(disabled_at) : null,
-        trabajador_activo
+        trabajador_activo,
+        entregado: !!r.entregado
       }
     })
   } catch (err) {
@@ -907,7 +957,7 @@ async function fetchAreas(){
           areasOptions.value = res.data.map(item => ({ label: item.area, value: item.area_id }))
       }
     }
-    // reserva: extraer de filas cargadas si el endpoint no devuelve datos o no está configurado, 
+    // reserva: extraer de filas cargadas si el endpoint no devuelve datos o no está configurado,
     // para asegurar que al menos las áreas presentes en los registros históricos estén disponibles como opciones
     if ((!areasOptions.value || areasOptions.value.length === 0) && rows.value.length){
       const uniq = [...new Set(rows.value.map(r => ({ area: r.area, area_id: r.area_id })).filter(x => x.area))]
@@ -915,7 +965,7 @@ async function fetchAreas(){
     }
   }catch(e){
     console.error('Error fetchAreas', e)
-    // alternativa aún: usar filas cargadas para extraer áreas si el endpoint falla o no está configurado, 
+    // alternativa aún: usar filas cargadas para extraer áreas si el endpoint falla o no está configurado,
     // para asegurar que al menos las áreas presentes en los registros históricos estén disponibles como opciones
     if (rows.value.length){
       const uniq = [...new Set(rows.value.map(r => ({ area: r.area, area_id: r.area_id })).filter(x => x.area))]

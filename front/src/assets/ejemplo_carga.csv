@@ -1,5 +1,5 @@
-cedula,nombres,apellidos,institucion,sede,adscripcion,cargo
-10000001,JUAN,PEREZ,Instituto Nacional,Sede Central,Area A,Analista
-10000002,MARIA,GONZALEZ,Otra Institucion,Sede Norte,Area B,Coordinador
-10000003,LUIS,LOPEZ,Instituto Nacional,Sede Central,Area C,Tecnico
-10000009,SIN,NOMBRE,NoExiste,Sede X,Area X,Cargo X
+cedula,nombres,apellidos,institucion,sede,adscripcion,cargo,fecha_ingreso
+10000001,JUAN,PEREZ,Instituto Nacional,Sede Central,Area A,Analista,2020-05-10
+10000002,MARIA,GONZALEZ,Otra Institucion,Sede Norte,Area B,Coordinador,2019-11-01
+10000003,LUIS,LOPEZ,Instituto Nacional,Sede Central,Area C,Tecnico,2021-02-15
+10000009,SIN,NOMBRE,NoExiste,Sede X,Area X,Cargo X,2022-07-20

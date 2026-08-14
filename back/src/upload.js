@@ -52,8 +52,8 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Limitar tamaño máximo de subida a 1 MB por archivo
-const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
+// Aceptar archivos temporales más grandes para luego comprimirlos a un tamaño de carnet
+const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
 const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_BYTES } });
 
 module.exports = upload;

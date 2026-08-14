@@ -64,6 +64,18 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
     }
 }));
 
+// Exponer la carpeta de imágenes públicas del frontend como /img para la página de credenciales
+app.use('/img', express.static(path.join(__dirname, '../../front/public/img'), {
+    etag: false,
+    setHeaders: (res, filePath, stat) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        try { res.removeHeader('ETag') } catch (e) { }
+        try { res.removeHeader('Last-Modified') } catch (e) { }
+    }
+}));
+
 app.use('/img/cintillomi.png', express.static(path.join(__dirname, '../../front/public/img/cintillomi.png'), {
     etag: false,
     setHeaders: (res) => {

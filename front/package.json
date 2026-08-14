@@ -27,7 +27,6 @@
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^5.0.7",
     "leaflet": "^1.9.4",
-    "minaamp-electoral": "file:",
     "pdf-lib": "^1.17.1",
     "pdfmake": "^0.2.18",
     "qrcode.vue": "^3.6.0",

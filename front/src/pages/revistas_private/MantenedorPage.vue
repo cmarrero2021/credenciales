@@ -9,84 +9,88 @@
     <q-table title="Lista de Servidores" :rows="filteredServers" :columns="isQuickEditMode ? quickEditColumns : columns"
       :rows-per-page-options="[10, 20, 50]" row-key="id" :pagination="pagination" :loading="loading" virtual-scroll
       class="responsive-table" :class="{ 'editing-mode': isQuickEditMode }">
-      <!-- Búsqueda general y botón borrar filtros -->
       <template v-slot:top>
-        <!-- Primera fila: Búsqueda general, filtro foto y botón borrar filtros -->
-        <div class="full-width row wrap items-center q-mb-md">
-          <!-- Búsqueda general -->
-          <div class="col-xs-12 col-sm-5 q-pr-xs">
-            <q-input outlined dense debounce="300" v-model="searchQuery" label="Búsqueda general"
-              placeholder="Buscar en todos los campos">
-              <template v-slot:append>
-                <q-icon v-if="searchQuery" name="clear" @click.stop="clearSearch" class="cursor-pointer" size="sm" />
-              </template>
-            </q-input>
-          </div>
-          <!-- Toggle Filtro de Foto -->
-          <div class="col-xs-10 col-sm-4 q-px-sm flex items-center">
-            <q-toggle
-              v-model="photoFilter"
-              toggle-indeterminate
-              :label="photoFilter === null ? 'Mostrar todos' : (photoFilter ? 'Servidores con foto' : 'Servidores sin foto')"
-              color="primary"
-            />
-          </div>
-          <!-- Botón "Borrar todos los filtros" -->
-          <div class="col-xs-2 col-sm-1">
-            <q-btn icon="fas fa-trash" title="Borrar todos los filtros" @click="clearAllFilters" color="negative" flat
-              size="sm" class="full-width" />
-          </div>
-        </div>
-
-        <!-- Segunda fila: Filtros para las columnas -->
-        <div class="full-width row wrap items-center content-center q-mb-md" v-if="!isQuickEditMode">
-          <div class="col-xs-12 col-sm-6 col-md-3 q-pa-sm" v-for="col in columns" :key="col.name">
-            <div v-if="col.filterable">
-              <div v-if="col.type === 'select'">
-                <q-select :model-value="filters[col.name]" @update:model-value="val => updateFilter(col.name, val)"
-                  :options="getOptions(col.name)" :label="col.label" multiple outlined dense use-chips clearable>
-                  <template v-slot:append>
-                    <q-icon v-if="filters[col.name] && filters[col.name].length > 0" name="clear"
-                      @click.stop="clearFilter(col.name)" class="cursor-pointer" size="sm" />
-                  </template>
-                </q-select>
-              </div>
-              <div v-else>
-                <q-input :model-value="filters[col.name]" @update:model-value="val => updateFilter(col.name, val)"
-                  :label="col.label" placeholder="Filtrar" outlined dense debounce="300">
-                  <template v-slot:append>
-                    <q-icon v-if="filters[col.name]" name="clear" @click.stop="clearFilter(col.name)"
-                      class="cursor-pointer" size="sm" />
-                  </template>
-                </q-input>
-              </div>
+        <div class="full-width q-mb-md">
+          <div class="row wrap items-center q-col-gutter-sm q-mb-md">
+            <div class="col-12 col-sm-6 col-md-5">
+              <q-input outlined dense debounce="300" v-model="searchQuery" label="Búsqueda general"
+                placeholder="Buscar en todos los campos">
+                <template v-slot:append>
+                  <q-icon v-if="searchQuery" name="clear" @click.stop="clearSearch" class="cursor-pointer" size="sm" />
+                </template>
+              </q-input>
             </div>
-          </div>
-          <!-- ///////////////////////////// -->
-          <!-- En el template, dentro del v-slot:top, después de los filtros existentes -->
-          <!-- <div class="full-width row wrap items-center q-mb-md" v-if="!isQuickEditMode">
-            <div class="col-3 q-pa-sm">
-              <div class="text-caption q-mb-xs">Filtrar por estado del voto:</div>
-              <q-slider
-                v-model="votoFilter"
-                :min="1"
-                :max="3"
-                :step="1"
-                snap
-                markers
-                label-always
-                :label-value="votoFilter === 1 ? 'Todos' : votoFilter === 2 ? 'Votaron' : 'No Votaron'"
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-toggle
+                v-model="photoFilter"
+                toggle-indeterminate
+                :label="photoFilter === null ? 'Mostrar todos' : (photoFilter ? 'Servidores con foto' : 'Servidores sin foto')"
+                color="primary"
+                dense
+                square
               />
             </div>
-          </div> -->
-        </div>
-          <div class="col-auto row items-center q-gutter-sm">
-          <div class="col row items-center q-gutter-sm" style="gap:8px;">
-            <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <q-btn icon="file_upload" label="CARGA MASIVA SERVIDORES" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <q-btn icon="upload_file" label="CARGA MASIVA FOTOS" title="Carga masiva de fotos" @click="triggerPhotoUpload" color="info" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <q-btn icon="visibility" label="VER ERRORES" title="Ver errores carga masiva" @click="openErrorsModal" color="orange" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
-            <input type="file" multiple accept="image/png, image/jpeg, image/jpg" ref="photoInput" style="display: none" @change="handleMassPhotoUpload" />
+            <div class="col-12 col-sm-auto flex items-center q-gutter-sm">
+              <q-toggle
+                v-model="stateFilter"
+                :label="stateFilter ? 'Servidores activos' : 'Servidores inactivos'"
+                color="primary"
+                dense
+                square
+              />
+              <q-btn icon="fas fa-trash" title="Borrar todos los filtros" @click="clearAllFilters" color="negative" flat size="sm" />
+            </div>
+          </div>
+
+          <div class="row wrap items-center q-col-gutter-sm q-mb-md" v-if="!isQuickEditMode">
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-input outlined dense debounce="300" v-model="filters.cedula" label="Cédula" placeholder="Filtrar" clearable @clear="clearFilter('cedula')" />
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-input outlined dense debounce="300" v-model="filters.nombres" label="Nombres" placeholder="Filtrar" clearable @clear="clearFilter('nombres')" />
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-input outlined dense debounce="300" v-model="filters.apellidos" label="Apellidos" placeholder="Filtrar" clearable @clear="clearFilter('apellidos')" />
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-select outlined dense clearable v-model="filters.institucion" label="Institución"
+                :options="options.institucion" emit-value map-options @clear="clearFilter('institucion')" />
+            </div>
+          </div>
+
+          <div class="row wrap items-center q-col-gutter-sm q-mb-md" v-if="!isQuickEditMode">
+            <div class="col-12 col-sm-4">
+              <q-select outlined dense clearable v-model="filters.sede" label="Sede"
+                :options="options.sede" emit-value map-options @clear="clearFilter('sede')" />
+            </div>
+            <div class="col-12 col-sm-4">
+              <q-select outlined dense clearable v-model="filters.area" label="Adscripción"
+                :options="options.area" emit-value map-options @clear="clearFilter('area')" />
+            </div>
+            <div class="col-12 col-sm-4">
+              <q-select outlined dense clearable v-model="filters.cargo" label="Cargo"
+                :options="options.cargo" emit-value map-options @clear="clearFilter('cargo')" />
+            </div>
+          </div>
+
+          <div class="row wrap items-center q-col-gutter-sm" v-if="!isQuickEditMode">
+            <div class="col-12">
+              <div class="row items-center q-col-gutter-sm">
+                <div class="col-auto">
+                  <q-btn icon="add" title="Agregar nueva revista" @click="openNewModal" color="positive" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+                </div>
+                <div class="col-auto">
+                  <q-btn icon="file_upload" label="CARGA MASIVA SERVIDORES" title="Carga masiva de servidores" @click="goToMassive" color="primary" size="sm" v-if="(hasPermission('create_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+                </div>
+                <div class="col-auto">
+                  <q-btn icon="upload_file" label="CARGA MASIVA FOTOS" title="Carga masiva de fotos" @click="triggerPhotoUpload" color="info" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+                </div>
+                <div class="col-auto">
+                  <q-btn icon="visibility" label="VER ERRORES" title="Ver errores carga masiva" @click="openErrorsModal" color="orange" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
+                </div>
+                <input type="file" multiple accept="image/png, image/jpeg, image/jpg" ref="photoInput" style="display: none" @change="handleMassPhotoUpload" />
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -96,6 +100,17 @@
         <q-td :props="props">
           <img :src="getFotoUrl(props.row.foto_url)" alt="Foto"
             style="width:48px;height:48px;object-fit:cover;border-radius:50%;border:1px solid #ccc;" />
+        </q-td>
+      </template>
+
+      <template v-slot:body-cell-fecha_ingreso="props">
+        <q-td :props="props">
+          <span :class="{ 'text-negative text-bold': isTooRecentIngreso(props.row) }">
+            {{ props.row.fecha_ingreso ? new Date(props.row.fecha_ingreso).toLocaleDateString() : '-' }}
+          </span>
+          <q-icon v-if="isTooRecentIngreso(props.row)" name="warning" color="orange" size="xs" class="q-ml-xs">
+            <q-tooltip>Ingreso menor a 3 meses – No se puede imprimir carnet</q-tooltip>
+          </q-icon>
         </q-td>
       </template>
 
@@ -109,7 +124,7 @@
 
             <!-- Botón Borrar -->
             <q-btn icon="delete" @click.stop="eliminarServidor(props.row)" color="negative" title="Eliminar Servidor"
-              size="xs" class="q-mr-xs" v-if="(hasPermission('delete_servidor') || hasPermission('view_admin'))" />
+              size="xs" class="q-mr-xs" v-if="(hasPermission('delete_servidor') || hasPermission('update_historico') || hasPermission('view_admin'))" />
           </div>
         </q-td>
       </template>
@@ -197,6 +212,9 @@
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.cargo" :options="optionsu.cargo" label="Cargo" filled option-label="label"
                   option-value="value" :disable="editForm.condicion === 'JUBILADO'" />
+              </div>
+              <div class="col-12 col-md-6">
+                <q-input v-model="editForm.fecha_ingreso" label="Fecha de ingreso" type="date" filled />
               </div>
               <div class="col-12 col-md-6">
                 <q-select v-model="editForm.condicion" :options="condicionOptions" label="Condición" filled
@@ -332,25 +350,30 @@
 </template>
 
 <script setup>
+import { ref, onMounted, computed, watch } from 'vue'
+import { LocalStorage, Notify, useQuasar } from 'quasar'
+import axios from 'axios'
+import { useRouter } from 'vue-router'
+
 // Ordenamiento múltiple para la tabla
 const customSort = (rows, sortBy, descending) => {
-  if (!Array.isArray(sortBy)) sortBy = [sortBy];
-  if (!Array.isArray(descending)) descending = [descending];
+  if (!Array.isArray(sortBy)) sortBy = [sortBy]
+  if (!Array.isArray(descending)) descending = [descending]
   return rows.slice().sort((a, b) => {
     for (let i = 0; i < sortBy.length; i++) {
-      const col = sortBy[i];
-      const dir = descending[i] ?? false;
-      if (a[col] < b[col]) return dir ? 1 : -1;
-      if (a[col] > b[col]) return dir ? -1 : 1;
+      const col = sortBy[i]
+      const dir = descending[i] ?? false
+      if (a[col] < b[col]) return dir ? 1 : -1
+      if (a[col] > b[col]) return dir ? -1 : 1
     }
-    return 0;
-  });
-};
+    return 0
+  })
+}
 // Estado del modal de edición
-const editDialog = ref(false);
-import { ref, onMounted, computed, watch } from 'vue';
+const editDialog = ref(false)
+// Verificar que todos los registros seleccionados tengan foto válida
 // Vista previa de la foto
-const fotoPreview = ref(null);
+const fotoPreview = ref(null)
 
 const onFotoChange = (file) => {
   if (file && file instanceof File) {
@@ -375,12 +398,10 @@ const onFotoChange = (file) => {
 watch(editDialog, (val) => {
   if (!val) fotoPreview.value = null;
 });
-import { LocalStorage, Notify } from 'quasar'
-import axios from 'axios';
-import { useRouter } from 'vue-router';
 
-const router = useRouter();
-const photoInput = ref(null);
+const router = useRouter()
+const photoInput = ref(null)
+const $q = useQuasar()
 
 const triggerPhotoUpload = () => {
   if (photoInput.value) {
@@ -390,12 +411,12 @@ const triggerPhotoUpload = () => {
 
 const extractCedulaFromFilename = (filename) => {
   const baseName = filename.replace(/\.[^/.]+$/, "").trim();
-  
+
   // 1. Si es puramente numérico y tiene entre 6 y 9 dígitos
   if (/^\d{6,9}$/.test(baseName)) {
     return baseName;
   }
-  
+
   // 2. Si es del formato timestamp_cedula (ej: 20260526_085918_6088396)
   if (baseName.includes('_')) {
     const parts = baseName.split('_');
@@ -404,13 +425,13 @@ const extractCedulaFromFilename = (filename) => {
       return lastPart;
     }
   }
-  
+
   // 3. Si tiene prefijo CI o V (ej: CI-6088396, V6088396)
   const cleanPrefix = baseName.replace(/^(ci|v|e)[-_\s]?/i, '');
   if (/^\d{6,9}$/.test(cleanPrefix)) {
     return cleanPrefix;
   }
-  
+
   // No es una cédula válida
   return null;
 };
@@ -443,7 +464,7 @@ const handleMassPhotoUpload = async (event) => {
   for (const file of files) {
     const cleanCedula = extractCedulaFromFilename(file.name);
     const fileSizeMB = file.size / (1024 * 1024);
-    
+
     if (fileSizeMB > 1.0) {
       Notify.create({
         type: 'negative',
@@ -672,7 +693,8 @@ const columns = [
   { name: 'sede', label: 'Sede', field: 'sede', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'area', label: 'Adscripción', field: 'area', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
-  { name: 'condicion', label: 'Condición', field: 'condicion', sortable: true, filterable: true, align: 'left', type: 'text' },
+  { name: 'fecha_ingreso', label: 'Fecha de ingreso', field: 'fecha_ingreso', sortable: true, filterable: false, align: 'left', type: 'date' },
+  { name: 'estado', label: 'Estado', field: 'estado', sortable: true, filterable: false, align: 'left', type: 'text' },
 ];
 // Función para obtener la URL de la foto
 // Soporta base64 (data:image/...) devuelto por el backend en producción,
@@ -680,7 +702,17 @@ const columns = [
 // El avatar por defecto se sirve desde los estáticos del FRONTEND (/img/no_person.png),
 // sin apiBase, para que nginx lo entregue directamente sin proxear al backend.
 const DEFAULT_AVATAR = '/img/no_person.png';
-const apiBase = import.meta.env.VITE_API_URL || '';
+function normalizeApiBase(raw) {
+  let url = (raw || '').toString().trim();
+  if (!url) {
+    url = (typeof window !== 'undefined' ? `http://${window.location.hostname}:3001` : 'http://localhost:3001');
+  }
+  if (url.startsWith(':')) url = `http://localhost${url}`;
+  if (/^localhost:/i.test(url)) url = `http://${url}`;
+  if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+  return url.replace(/\/+$/, '');
+}
+const apiBase = normalizeApiBase(import.meta.env.VITE_API_URL);
 const getFotoUrl = (foto_url) => {
   if (!foto_url) return DEFAULT_AVATAR;
   // Base64 embebida: devolver tal cual (evita segunda petición HTTP)
@@ -699,17 +731,40 @@ const getFotoUrl = (foto_url) => {
   return DEFAULT_AVATAR;
 };
 
+const getPublicAssetUrl = (path) => {
+  if (!path) return path;
+  if (typeof window !== 'undefined' && path.startsWith('/')) {
+    return `${window.location.origin}${path}`;
+  }
+  return path;
+};
+
+function parseFechaIngreso(item) {
+  const raw = item?.fecha_ingreso || item?.fecha_ingreso_str || item?.ingreso || null
+  if (!raw) return null
+  const date = new Date(raw)
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+function isTooRecentIngreso(item) {
+  const ingreso = parseFechaIngreso(item)
+  if (!ingreso) return false
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - 3)
+  return ingreso > cutoff
+}
+
 // Columnas para el modo edición rápida
-// const quickEditColumns = [
-//   { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, align: 'left' },
-//   { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, align: 'left' },
-//   { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, align: 'left' },
-//   // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
-//   { name: 'controles', label: 'Controles', align: 'right' }
-// ];
+const quickEditColumns = [
+  { name: 'cedula', label: 'Cédula', field: 'cedula', sortable: true, align: 'left' },
+  { name: 'nombres', label: 'Nombre', field: 'nombres', sortable: true, align: 'left' },
+  { name: 'hora_voto', label: 'Votó', field: 'hora_voto', sortable: true, align: 'left' },
+  // { name: 'observaciones', label: 'Observaciones', field: 'observaciones', sortable: false, align: 'left' },
+  { name: 'controles', label: 'Controles', align: 'right' }
+];
 
 // URLs de los endpoints
-const apiURL = import.meta.env.VITE_API_URL;
+const apiURL = normalizeApiBase(import.meta.env.VITE_API_URL);
 const estadosURL = import.meta.env.VITE_MP_ESTADOSS_URL;
 // const estadosURL = import.meta.env.VITE_ESTADOR_BASE_URL;
 const estadosLsURL = import.meta.env.VITE_LS_ESTADOS_URL;
@@ -732,6 +787,10 @@ const hasPermission = (permissionName) => {
     return false
   })
 }
+
+const isRRHH = computed(() => hasPermission('update_historico'))
+const isAdmin = computed(() => hasPermission('view_admin') || hasPermission('view_admin1'))
+const stateFilter = ref(true)
 
 // Estado de la aplicación
 const servers = ref([]);
@@ -780,8 +839,90 @@ async function printBatchServidores(size = null) {
       return
     }
 
+    const tooRecentSelected = selectedRows.filter(isTooRecentIngreso)
+    if (tooRecentSelected.length > 0) {
+      const skipped = tooRecentSelected.map(s => s.cedula || s.id).join(', ')
+      Notify.create({
+        type: 'warning',
+        message: `Se excluyen ${tooRecentSelected.length} servidores con fecha de ingreso menor a 3 meses: ${skipped}`
+      })
+      selectedRows = selectedRows.filter(s => !isTooRecentIngreso(s))
+      if (!selectedRows.length) {
+        Notify.create({ type: 'negative', message: 'No hay carnets válidos para imprimir tras aplicar la restricción de ingreso.' })
+        return
+      }
+    }
+
     const pageSize = Number(size || 20)
     const groups = chunkArray(selectedRows, pageSize)
+
+    // --- Nuevo: comprobar si algunos carnets ya fueron impresos ---
+    try {
+      const enriched = await Promise.all(selectedRows.map(async (s) => {
+        try {
+          const res = await axios.get(`${apiBase}/auth/credencial/${s.cedula}`)
+          if (res && res.data && res.data.cedula) return res.data
+        } catch (err) {
+          console.warn('printBatchServidores: could not fetch full data for', s.cedula, err && err.message)
+        }
+        return s
+      }))
+
+      const alreadyPrinted = enriched.filter(s => s.ya_impreso === true)
+      if (alreadyPrinted.length > 0) {
+        // Mostrar diálogo con opciones: reimprimir todo, omitir impresos, cancelar
+        const listHtml = alreadyPrinted.map(x => `${x.cedula} - ${(x.nombres || '') + ' ' + (x.apellidos || '')}`).join('<br/>')
+        const dlg = $q.dialog({
+          title: '⚠️ Carnets ya impresos detectados',
+          message: `Se detectaron ${alreadyPrinted.length} carnets ya impresos:<br/>${listHtml}<br/><br/>¿Desea reimprimirlos? Reimprimir marcará el carnet anterior como anulado (inactivo).`,
+          html: true,
+          ok: { label: 'Reimprimir todos', color: 'warning' },
+          cancel: { label: 'Omitir impresos', color: 'primary' },
+          persistent: true
+        })
+
+        const answer = await dlg.onOk(() => true).onCancel(() => false)
+        // onOk resolved -> reprint all, onCancel -> omit printed
+        const reprintAll = (answer === true)
+        if (!reprintAll) {
+          // Omitir impresos: filtrar selectedRows a los que no estaban impresos
+          selectedRows = enriched.filter(s => s.ya_impreso !== true)
+          if (!selectedRows || selectedRows.length === 0) {
+            Notify.create({ type: 'info', message: 'No hay carnets pendientes de impresión después de omitir los ya impresos.' })
+            return
+          }
+        } else {
+          // Reimprimir todos: dejamos selectedRows = enriched (incluye todos)
+          selectedRows = enriched
+        }
+        // Recalcular grupos con la nueva selección
+        const newPageSize = Number(size || 20)
+        groups.length = 0
+        const newGroups = chunkArray(selectedRows, newPageSize)
+        // replace groups variable content by pushing
+        for (let g of newGroups) groups.push(g)
+        // Si el usuario eligió reimprimir y tiene permiso RRHH, solicitar al backend marcar historiales previos como anulados
+        if (reprintAll) {
+          try {
+            const token = LocalStorage.getItem('token')
+            if (token && hasPermission('update_historico')) {
+              // Ejecutar deshabilitado previo de forma secuencial para no saturar la BD
+              for (const s of selectedRows) {
+                try {
+                  await disablePreviousHistorico(s.cedula)
+                } catch (e) {
+                  console.warn('disablePreviousHistorico error for', s.cedula, e)
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Error al deshabilitar historiales previos (frontend):', e)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error comprobando impresiones previas:', err)
+    }
 
     // Verificar que todos los registros seleccionados tengan foto válida
     const missing = selectedRows.filter(r => {
@@ -795,6 +936,20 @@ async function printBatchServidores(size = null) {
       return
     }
 
+    const createdHistoryIds = []
+    const reportResults = await Promise.allSettled(
+      selectedRows.map(async (s) => {
+        if (!s || !s.cedula) return null
+        const saved = await bgReportPrint(s.cedula, false)
+        if (saved) return saved
+        return null
+      })
+    )
+
+    reportResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) createdHistoryIds.push(result.value)
+    })
+
     const win = window.open('', '_blank')
     if (!win) {
       Notify.create({ type: 'negative', message: 'Bloqueador de ventanas emergentes impide la impresión masiva' })
@@ -803,11 +958,13 @@ async function printBatchServidores(size = null) {
 
     // Datos para construir QR
     const qrBaseUrl = 'https://credenciales.minaamp.gob.ve/credenciales/cedula='
+    const publicBaseUrl = (typeof window !== 'undefined' ? window.location.origin : '')
 
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi]
       const html = []
       html.push('<!doctype html><html><head><meta charset="utf-8"><title>Impresión masiva</title>')
+      html.push(`<base href="${publicBaseUrl}/">`)
       html.push('<style>body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:8px} .sheet{display:flex;flex-wrap:wrap;gap:8px} .cred{width:55mm;height:85mm;box-sizing:border-box;border:0;margin:0;padding:0} .fondo{position:relative;width:55mm;height:85mm;overflow:hidden} .foto{position:absolute;right:8mm;top:18mm;width:19mm;height:19mm;object-fit:cover;border-radius:3mm;border:1px solid #888} .nombre{position:absolute;top:36mm;width:100%;text-align:center;font-size:4mm;font-weight:700} .cedula{position:absolute;top:40mm;width:100%;text-align:center;font-size:5.6mm;font-weight:700} .cargo{position:absolute;top:48mm;width:100%;text-align:center;font-size:3.2mm} .back{width:55mm;height:85mm;padding:4mm;box-sizing:border-box} .qr{position:absolute;right:6mm;bottom:6mm;width:18mm;height:18mm} @media print{ .cred{page-break-inside:avoid} /* Rotar la cara trasera 180° sólo al imprimir para compensar el volteo del papel en duplex */ .cred .back{transform:rotate(180deg);transform-origin:50% 50%;display:block} .cred .back *{transform:none !important;} }</style>')
       html.push('</head><body>')
       html.push('<div class="sheet">')
@@ -849,6 +1006,22 @@ async function printBatchServidores(size = null) {
       if (gi < groups.length - 1) await new Promise(resolve => setTimeout(resolve, 1000))
     }
     try { win.close() } catch (e) {}
+    // Preguntar y reportar al backend que se imprimieron (registrar historico)
+    try {
+      $q.dialog({
+        title: 'Confirmar entrega de lote',
+        message: `Se registró la impresión de ${selectedRows.length} credenciales. ¿Fueron entregadas o quedan en espera?`,
+        ok: { label: 'Entregadas', color: 'positive', icon: 'check' },
+        cancel: { label: 'En espera', color: 'warning', icon: 'schedule' },
+        persistent: true
+      }).onOk(() => {
+        markBatchHistoryDelivered(createdHistoryIds, true)
+      }).onCancel(() => {
+        markBatchHistoryDelivered(createdHistoryIds, false)
+      })
+    } catch (e) {
+      console.warn('Error mostrando diálogo de confirmación de entrega:', e)
+    }
   } catch (e) {
     console.error('printBatchServidores error', e)
     Notify.create({ type: 'negative', message: 'Error generando impresión masiva' })
@@ -957,9 +1130,9 @@ async function generatePdfBatch(size = null) {
 
         /* Estilos para la parte trasera de la credencial (copiados de CredencialPage.vue) */
         /* Estilos para la parte trasera de la credencial */
-.credencial-trasera {
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-}
+        .credencial-trasera {
+          background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
 
 .contenido-trasero {
   width: 100%;
@@ -1009,8 +1182,8 @@ async function generatePdfBatch(size = null) {
 }
 
 .sello-img {
-  width: 110px;
-  height: 100px;
+  width: 200px;
+  height: 200px;
   object-fit: contain;
   margin-left: -4mm; /* acercar el sello hacia la izquierda */
   margin-top: -1.5mm; /* alinear un poco más arriba si hace falta */
@@ -1102,17 +1275,63 @@ async function generatePdfBatch(size = null) {
   }
 }
 
+// Function to log the print action to the database without stopping the UI
+async function bgReportPrint(cedulaStr, entregadoVal) {
+  try {
+    const token = LocalStorage.getItem('token')
+    if (!token) return null
+    const res = await axios.post(`${apiBase}/auth/credencial/historico`, { cedula: cedulaStr, entregado: !!entregadoVal }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    return res.data?.historyId || null
+  } catch (err) {
+    console.error('No se pudo registrar la impresión en el módulo de gestión (batch):', err)
+    return null
+  }
+}
+
+async function markBatchHistoryDelivered(historyIds, entregadoVal) {
+  try {
+    const token = LocalStorage.getItem('token')
+    if (!token || !historyIds || historyIds.length === 0) return
+    await Promise.allSettled(
+      historyIds.map((historyId) => axios.patch(`${apiBase}/auth/credencial/historico/${historyId}/entregado`, { entregado: !!entregadoVal }, {
+        headers: { Authorization: `Bearer ${token}` }
+      }))
+    )
+  } catch (err) {
+    console.error('No se pudo actualizar el estado de entrega del lote:', err)
+  }
+}
+
+// Frontend request to explicitly mark previous historico entries as deshabilitado (Anulado por Reimpresion)
+async function disablePreviousHistorico(cedulaStr) {
+  try {
+    const token = LocalStorage.getItem('token')
+    if (!token) return
+    if (!hasPermission('update_historico')) return
+    await axios.patch(`${apiBase}/auth/eliminar_servidor/${cedulaStr}`, { reason: 'Anulado por Reimpresion' }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  } catch (err) {
+    console.error('No se pudo deshabilitar historico previo (frontend):', err)
+    throw err
+  }
+}
+
 // Búsqueda general
 const searchQuery = ref('');
 const photoFilter = ref(null);
 
 // Filtros para las columnas
 const filters = ref({
-  areas: null,
+  cedula: null,
+  nombres: null,
+  apellidos: null,
   institucion: null,
   sede: null,
-  cargo: null,
-  indice: null
+  area: null,
+  cargo: null
 });
 
 // Opciones para los select
@@ -1135,12 +1354,14 @@ const isEditing = ref(false);
 const openEditModal = (row) => {
   isEditing.value = true;
   // Inicializar selects con objeto {label, value} correcto
+  const normalizeId = (value) => (value === undefined || value === null) ? null : String(value);
   editForm.value = {
     ...row,
-    institucion: optionsu.value.institucion.find(opt => opt.value === row.institucion_id) || null,
-    sede: optionsu.value.sede.find(opt => opt.value === row.sede_id) || null,
-    area: optionsu.value.area.find(opt => opt.value === row.area_id) || null,
-    cargo: optionsu.value.cargo.find(opt => opt.value === row.cargo_id) || null,
+    institucion: optionsu.value.institucion.find(opt => normalizeId(opt.value) === normalizeId(row.institucion_id)) || null,
+    sede: optionsu.value.sede.find(opt => normalizeId(opt.value) === normalizeId(row.sede_id)) || null,
+    area: optionsu.value.area.find(opt => normalizeId(opt.value) === normalizeId(row.area_id)) || null,
+    cargo: optionsu.value.cargo.find(opt => normalizeId(opt.value) === normalizeId(row.cargo_id)) || null,
+    fecha_ingreso: row.fecha_ingreso ? (row.fecha_ingreso instanceof Date ? row.fecha_ingreso.toISOString().slice(0, 10) : row.fecha_ingreso) : null,
     condicion: row.condicion || 'ACTIVO'
   };
   // Si hay foto, mostrar la previsualización
@@ -1177,16 +1398,20 @@ const originalRowData = ref({});
 // Función para obtener los datos de las revistas
 const fetchServers = async () => {
   try {
-    const response = await axios.get(servidoresURL);
-    servers.value = response.data;
+    const srvUrl = servidoresURL || `${apiBase.replace(/\/+$/, '')}/auth/servidores`
+    const response = await axios.get(srvUrl);
+    servers.value = response.data.map(item => ({
+      ...item,
+      estado: (item.trabajador_activo === false || item.activo === false) ? 'Inactivo' : 'Activo',
+      trabajador_activo: typeof item.trabajador_activo !== 'undefined' ? item.trabajador_activo : item.activo,
+      activo: typeof item.activo !== 'undefined' ? item.activo : item.trabajador_activo
+    }));
     console.log("servers:", servers.value)
   } catch (error) {
     console.error('Error al obtener las revistas:', error);
     const status = error.response?.status;
     if (status === 403) {
       Notify.create({ type: 'negative', message: 'Acceso denegado: no tienes permisos para ver servidores.' })
-      // Redirect to home or leave page empty
-      // router.push('/')
     } else {
       Notify.create({ type: 'negative', message: 'Error cargando servidores.' })
     }
@@ -1209,9 +1434,9 @@ const isINASS_item = (item) => {
 
 const getFooterFor_item = (item) => {
   if (isINASS_item(item)) {
-    return '/img/inass_sello_firma.png';
+    return getPublicAssetUrl('/img/inass_sello_firma.png');
   }
-  return '/img/ministerio_sello_firma.png';
+  return getPublicAssetUrl('/img/ministerio_sello_firma.png');
 };
 
 // Selección dinámica del frontal del carnet según institución y adscripción (seguridad / comunicaciones).
@@ -1231,14 +1456,14 @@ const getFondoFor_item = (item) => {
   const comunicacionKeywords = ['comunic', 'gesti', 'comunicacional', 'comunicaciones', 'gestion comunicacional', 'prensa'];
 
   if (seguridadKeywords.some(k => area.includes(k))) {
-    return isInass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png';
+    return getPublicAssetUrl(isInass ? '/img/frontal_seguridad_inass.png' : '/img/frontal_seguridad_ministerio.png');
   }
   if (comunicacionKeywords.some(k => area.includes(k))) {
-    return isInass ? '/img/frontal_prensa_inass.png' : '/img/frontal_prensa_ministerio.png';
+    return getPublicAssetUrl(isInass ? '/img/frontal_comunicaciones_inass.png' : '/img/frontal_comunicaciones_ministerio.png');
   }
 
   // Default: INASS has its own frontal image, otherwise use the ministry frontal
-  return isInass ? '/img/frontal_carnet_inass1.png' : '/img/frontal_carnet.png';
+  return getPublicAssetUrl(isInass ? '/img/frontal_carnet_inass1.png' : '/img/frontal_carnet.png');
 };
 
 const condicionOptions = computed(() => {
@@ -1271,36 +1496,41 @@ watch(() => editForm.value.condicion, (newVal) => {
 // Función para obtener las opciones de los filtros
 const fetchOptions = async () => {
   try {
-    const areasResponse = await axios.get(areasURL);
+    const areaUrl = areasURL || `${apiBase.replace(/\/+$/, '')}/auth/areas`
+    const institucionUrl = institucionesURL || `${apiBase.replace(/\/+$/, '')}/auth/instituciones`
+    const sedeUrl = sedesURL || `${apiBase.replace(/\/+$/, '')}/auth/sedes`
+    const cargosUrl = '/auth/servidores_cargos'
+
+    const areasResponse = await axios.get(areaUrl)
     options.value.area = areasResponse.data.map(item => item.area);
-    const areasResponseU = await axios.get(areasURL);
+    const areasResponseU = await axios.get(areaUrl);
     optionsu.value.area = areasResponseU.data.map(item => ({
       label: item.area,
       value: item.area_id
     }));
 
     // Obtener instituciones
-    const institucionsResponse = await axios.get(institucionesURL);
+    const institucionsResponse = await axios.get(institucionUrl);
     options.value.institucion = institucionsResponse.data.map(item => item.institucion);
-    const institucionsResponseU = await axios.get(institucionesURL);
+    const institucionsResponseU = await axios.get(institucionUrl);
     optionsu.value.institucion = institucionsResponseU.data.map(item => ({
       label: item.institucion,
       value: item.id
     }));
     // Obtener sedes
-    const sedesResponse = await axios.get(sedesURL);
+    const sedesResponse = await axios.get(sedeUrl);
     options.value.sede = sedesResponse.data.map(item => item.sede);
-    const sedesResponseU = await axios.get(sedesURL);
+    const sedesResponseU = await axios.get(sedeUrl);
     optionsu.value.sede = sedesResponseU.data.map(item => ({
       label: item.sede,
       value: item.id
     }));
 
     // Obtener cargos
-    const cargosResponse = await axios.get('/auth/servidores_cargos');
+    const cargosResponse = await axios.get(cargosUrl);
     options.value.cargo = cargosResponse.data.map(item => item.cargo);
 
-    const cargosResponseU = await axios.get('/auth/servidores_cargos');
+    const cargosResponseU = await axios.get(cargosUrl);
     optionsu.value.cargo = cargosResponseU.data.map(item => ({
       label: item.cargo,
       value: item.id
@@ -1328,6 +1558,7 @@ const clearAllFilters = () => {
   }
   searchQuery.value = '';
   photoFilter.value = null;
+  stateFilter.value = true;
   // votoFilter.value = 1;
 };
 
@@ -1361,6 +1592,13 @@ const filteredServers = computed(() => {
         return serverValue.includes(searchValue);
       });
   });
+
+  // Aplicar el filtro por estado del trabajador antes de los filtros de columna
+  if (stateFilter.value === true) {
+    searchedServers = searchedServers.filter(server => server.trabajador_activo !== false && server.activo !== false);
+  } else if (stateFilter.value === false) {
+    searchedServers = searchedServers.filter(server => server.trabajador_activo === false || server.activo === false);
+  }
 
   // Finalmente aplicar los filtros por columna
   return searchedServers.filter(server => {
@@ -1402,6 +1640,13 @@ const saveChanges = async () => {
     formData.append('nombres', editForm.value.nombres?.toUpperCase() ?? '');
     formData.append('apellidos', editForm.value.apellidos?.toUpperCase() ?? '');
     formData.append('condicion', editForm.value.condicion || 'ACTIVO');
+    // Fecha de ingreso (YYYY-MM-DD expected)
+    const fechaIngresoValue = editForm.value.fecha_ingreso instanceof Date
+      ? editForm.value.fecha_ingreso.toISOString().slice(0, 10)
+      : editForm.value.fecha_ingreso;
+    if (fechaIngresoValue !== undefined && fechaIngresoValue !== null) {
+      formData.append('fecha_ingreso', fechaIngresoValue);
+    }
 
     if (editForm.value.foto) {
       formData.append('foto', editForm.value.foto);
@@ -1410,7 +1655,6 @@ const saveChanges = async () => {
     // Leer el token del LocalStorage para incluirlo en el header Authorization
     const token = LocalStorage.getItem('token');
     const authHeaders = {
-      'Content-Type': 'multipart/form-data',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
 
@@ -1504,7 +1748,7 @@ const eliminarServidor = async (servidor) => {
     const confirmacion = await new Promise((resolve) => {
       Notify.create({
         type: 'warning',
-        message: `¿Está seguro que desea eliminar el servidor ${servidor.nombres} (C.I. ${servidor.cedula})?`,
+        message: `¿Está seguro que desea eliminar el servidor ${servidor.nombres} (C.I. ${servidor.cedula})? Esta acción lo dejará inactivo en la base de datos.`,
         timeout: 0,
         actions: [
           {
@@ -1523,16 +1767,16 @@ const eliminarServidor = async (servidor) => {
 
     if (!confirmacion) return;
 
-    // Realizar la solicitud PATCH para borrado lógico
+    // Realizar la solicitud PATCH para borrado lógico con motivo egreso
     loading.value = true;
     const token = LocalStorage.getItem('token');
-    await axios.patch(`${deleteServerURL}${servidor.cedula}`, {}, {
+    await axios.patch(`${deleteServerURL}${servidor.cedula}`, { reason: 'egreso' }, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     });
 
     Notify.create({
       type: 'positive',
-      message: 'Servidor eliminado correctamente'
+      message: 'Servidor marcado como inactivo correctamente'
     });
 
     // Actualizar la lista
@@ -1554,17 +1798,28 @@ watch(pagination, () => {
 
 // Obtener los datos al montar el componente
 onMounted(async () => {
-  if (!LocalStorage.getItem('token')) {
-    router.push('/login')
-  }
-  await fetchOptions();
-  // Only fetch servers if the user has permission to read servers
-  if (hasPermission('read_servidor') || hasPermission('view_admin')) {
-    await fetchServers();
-  } else {
-    loading.value = false;
-    // Optionally notify the user they don't have access
-    // Notify.create({ type: 'warning', message: 'No tienes permisos para ver la lista de servidores.' })
+  try {
+    const tokenVal = LocalStorage.getItem('token')
+    const permsVal = LocalStorage.getItem('permissions') || LocalStorage.getItem('userPermissions') || []
+    console.log('MantenedorPage onMounted, token:', !!tokenVal, 'permissions:', permsVal)
+    if (!tokenVal) {
+      router.push('/login')
+      return
+    }
+    await fetchOptions()
+    // Only fetch servers if the user has permission to read servers
+    const canRead = hasPermission('read_servidor') || hasPermission('view_admin')
+    console.log('MantenedorPage canRead:', canRead)
+    if (canRead) {
+      await fetchServers()
+    } else {
+      loading.value = false
+    }
+  } catch (err) {
+    console.error('Error en onMounted de MantenedorPage:', err)
+    Notify.create({ type: 'negative', message: 'Error inicializando la vista de Servidores: ' + (err.message || err) })
+  } finally {
+    loading.value = false
   }
 });
 </script>

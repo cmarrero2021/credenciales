@@ -16,6 +16,8 @@ async function runAlter() {
         await pool.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS condicion VARCHAR(50) DEFAULT 'ACTIVO'");
         await pool.query("ALTER TABLE servidores ALTER COLUMN area_id DROP NOT NULL");
         await pool.query("ALTER TABLE servidores ALTER COLUMN cargo_id DROP NOT NULL");
+        await pool.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS activo boolean DEFAULT true");
+        await pool.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS fecha_ingreso date");
         console.log('ALTER TABLE statements completed successfully.');
     } catch (err) {
         console.error('Error during ALTER TABLE:', err);

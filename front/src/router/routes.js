@@ -37,30 +37,25 @@ const routes = [
   },
   {
     path: "/",
-    component: () => import("pages/revistas_private/MantenedorPage.vue"),
-    // component: () => import("pages/login/LoginPage.vue"),
+    component: () => import("pages/login/LoginPage.vue"),
     meta: { requiresGuest: true },
-    // children: [
-    //   { path: "", component: () => import("pages/IndexPage.vue") },
-    //   {
-    //     path: "/revistas",
-    //     component: () => import("pages/revistas_public/RevistasPage.vue"),
-    //   },
-    //   {
-    //     path: "/estadisticas",
-    //     component: () => import("pages/revistas_public/EstadisticasPage.vue"),
-    //   },
-    //   {
-    //     path: "/login",
-    //     component: () => import("pages/login/LoginPage.vue"),
-    //     meta: { requiresGuest: true },
-    //   },
-    // ],
   },
   {
     path: "/servers",
     component: () => import("layouts/MainLayout.vue"),
     meta: { requiresAuth: true, requiredPermission: 'read_servidor' },
+    children: [
+      {
+        path: "",
+        component: () => import("pages/revistas_private/MantenedorPage.vue"),
+      },
+    ],
+  },
+  // DEBUG: ruta temporal para ver la página de Servidores sin autenticación
+  {
+    path: "/debug_servers",
+    component: () => import("layouts/MainLayout.vue"),
+    // No requiere auth: solo para depuración local
     children: [
       {
         path: "",
@@ -113,6 +108,17 @@ const routes = [
   //     },
   //   ],
   // },
+  {
+    path: "/catalogos",
+    component: () => import("layouts/MainLayout.vue"),
+    meta: { requiresAuth: true, requiredPermission: 'view_admin' },
+    children: [
+      {
+        path: "",
+        component: () => import("pages/CatalogosPage.vue"),
+      },
+    ],
+  },
   {
     path: "/:catchAll(.*)*",
     component: () => import("pages/login/LoginPage.vue"),

@@ -1,3 +1,4 @@
+// @ts-nocheck
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const pool = require('./db');
@@ -72,7 +73,7 @@ const extractCedulaFromFilename = (filename) => {
 // ================================
 // Crear servidores
 exports.createServer = async (req, res) => {
-    const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id, condicion } = req.body;
+    const { area_id, institucion_id, sede_id, estado_id, cedula, nombres, apellidos, cargo_id, condicion, fecha_ingreso } = req.body;
 
     // Convertir IDs vacíos a null para evitar errores en Postgres
     // Convertir IDs vacíos a null y asegurar que sean enteros para evitar errores en Postgres
@@ -102,10 +103,11 @@ exports.createServer = async (req, res) => {
             return res.status(409).json({ error: 'La cédula del servidor ya está registrada.' });
         }
 
-        // Insertar servidor
+        // Insertar servidor (incluye fecha_ingreso si se provee)
+        const fechaIngresoVal = (fecha_ingreso === '' || fecha_ingreso === null || fecha_ingreso === undefined || fecha_ingreso === 'null' || fecha_ingreso === 'undefined') ? null : fecha_ingreso;
         const insertResult = await client.query(
-            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id, condicion) VALUES ($4, $5, $6, $2, $3, $1, $7, $8) RETURNING id',
-            [areaId, institucionId, sedeId, cedula, nombres, apellidos, cargoId, condicion || 'ACTIVO']
+            'INSERT INTO servidores (cedula, nombres, apellidos, institucion_id, sede_id, area_id, cargo_id, fecha_ingreso, condicion) VALUES ($4, $5, $6, $2, $3, $1, $7, $8, $9) RETURNING id',
+            [areaId, institucionId, sedeId, cedula, nombres, apellidos, cargoId, fechaIngresoVal, condicion || 'ACTIVO']
         );
 
         const servidor_id = insertResult.rows[0]?.id;
@@ -341,10 +343,12 @@ exports.listCredentialHistory = async (req, res) => {
             END$$;`);
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS motivo_deshabilitado text");
             await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS fecha_deshabilitado timestamptz");
+            await client.query("ALTER TABLE historico ADD COLUMN IF NOT EXISTS entregado boolean DEFAULT false");
         } catch (e) { console.warn('No se pudo asegurar columnas:', e && e.message) }
 
         let result = await client.query(`
                 SELECT h.id, h.institucion, h.cedula, h.nombres, h.apellidos, h.unidad, h.cargo, h.vigente, h.created_at,
+                       h.entregado,
                        encode(h.foto, 'base64') as foto_b64,
                        h.motivo_deshabilitado, h.fecha_deshabilitado,
                        u.id as printed_by_id, u.first_name, u.last_name, u.username as printed_by_username,
@@ -368,6 +372,7 @@ exports.listCredentialHistory = async (req, res) => {
             vigente: r.vigente,
             activo: (typeof r.servidor_activo !== 'undefined') ? r.servidor_activo : r.vigente,
             created_at: r.created_at,
+            entregado: !!r.entregado,
             foto_url: r.foto_b64 ? `data:image/png;base64,${r.foto_b64}` : null,
             disable_reason: (function () { try { return normalizeReason(r.motivo_deshabilitado) } catch (e) { return r.motivo_deshabilitado || null } })(),
             disabled_at: r.fecha_deshabilitado || null,
@@ -408,6 +413,21 @@ exports.listCredentialHistory = async (req, res) => {
         client.release();
     }
 };
+
+exports.updateCredentialDelivered = async (req, res) => {
+    const { id } = req.params;
+    const { entregado } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('UPDATE historico SET entregado = $1 WHERE id = $2', [entregado === true || entregado === 'true', id]);
+        res.status(200).json({ message: 'Estado de entrega actualizado exitosamente.' });
+    } catch (err) {
+        console.error('Error updateCredentialDelivered:', err);
+        res.status(500).json({ error: 'Error al actualizar el estado de entrega.' });
+    } finally {
+        client.release();
+    }
+};
 // Listar Servidores
 exports.listServers = async (req, res) => {
     const client = await pool.connect();
@@ -426,15 +446,41 @@ exports.listServers = async (req, res) => {
             await client.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS condicion VARCHAR(50) DEFAULT 'ACTIVO'");
             await client.query("ALTER TABLE servidores ALTER COLUMN area_id DROP NOT NULL");
             await client.query("ALTER TABLE servidores ALTER COLUMN cargo_id DROP NOT NULL");
+            await client.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS activo boolean DEFAULT true");
+            await client.query("ALTER TABLE servidores ADD COLUMN IF NOT EXISTS fecha_ingreso date");
         } catch (e) { console.warn('No se pudo asegurar columnas o restricciones:', e && e.message) }
 
+        let canViewInactive = false;
+        try {
+            const permRes = await client.query(`
+                SELECT p.name AS permission_name
+                FROM user_permissions up
+                JOIN permissions p ON up.permission_id = p.id
+                WHERE up.user_id = $1
+                UNION
+                SELECT p.name AS permission_name
+                FROM user_roles ur
+                JOIN role_permissions rp ON ur.role_id = rp.role_id
+                JOIN permissions p ON rp.permission_id = p.id
+                WHERE ur.user_id = $1
+            `, [req.userId]);
+            const perms = permRes.rows.map(r => r.permission_name);
+            const isAdmin = perms.includes('view_admin') || perms.includes('view_admin1');
+            const isRRHH = perms.includes('update_historico');
+            canViewInactive = isAdmin || isRRHH;
+        } catch (e) {
+            console.warn('No se pudo obtener permisos para filtrar servidores inactivos:', e && e.message)
+        }
+
+        const activeFilterClause = canViewInactive ? '' : 'WHERE s.activo IS NOT FALSE';
         const result = await client.query(`
             SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
                    a.nombres as nombres, a.apellidos as apellidos, a.cargo_id, a.cargo,
-                   f.foto_url, s.condicion
+                   f.foto_url, s.condicion, s.activo as servidor_activo, s.fecha_ingreso
             FROM vservidores a
             LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
             LEFT JOIN servidores s ON s.id = a.id
+            ${activeFilterClause}
             ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
         `);
         // Verificar existencia física de la foto y asignar imagen por defecto si no existe
@@ -472,7 +518,13 @@ exports.listServers = async (req, res) => {
                     final_url = defaultFoto;
                 }
             }
-            return { ...row, foto_url: final_url };
+            const trabajadorActivo = (typeof row.servidor_activo !== 'undefined' && row.servidor_activo !== null) ? row.servidor_activo : true;
+            return {
+                ...row,
+                foto_url: final_url,
+                trabajador_activo: trabajadorActivo,
+                activo: trabajadorActivo
+            };
         });
         res.status(200).json(servidores);
     } catch (err) {
@@ -512,43 +564,57 @@ exports.getCredencial = async (req, res) => {
     const client = await pool.connect();
     const fs = require('fs');
     const path = require('path');
+    
+    try {
+        await client.query('ALTER TABLE servidores ADD COLUMN IF NOT EXISTS fecha_ingreso date');
+    } catch (alterErr) {
+        console.warn('No se pudo asegurar columna fecha_ingreso en servidores:', alterErr && alterErr.message);
+    }
+
     try {
         // Buscar datos del servidor y foto
         const result = await client.query(`
-            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.abreviacion, s.cargo_id, s.cargo, s.nivel, f.foto_url, ss.condicion
+            SELECT s.cedula, s.nombres, s.apellidos, s.institucion, s.area, s.abreviacion,
+                   s.cargo_id, s.cargo, s.nivel, f.foto_url, ss.condicion, ss.fecha_ingreso
             FROM vservidores s
             LEFT JOIN fotos_usuarios f ON f.usuario_id = s.id
             LEFT JOIN servidores ss ON ss.cedula = s.cedula
             WHERE s.cedula = $1
         `, [cedula]);
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'No encontrado.' });
         }
+
         const row = result.rows[0];
-        let foto_url = row.foto_url;
+        const foto_url = row.foto_url;
         let final_url = '/img/no_person.png';
+
         if (foto_url) {
-            // Intentar leer el archivo desde disco y devolver como base64
-            // Esto evita que el navegador tenga que hacer una segunda petición HTTP
-            // a /uploads/, lo que puede fallar si nginx no proxea esa ruta.
             const nombreFoto = foto_url.replace(/\\/g, '/').split('/').pop();
             const uploadsDir = path.join(__dirname, '../uploads');
             let realPath = null;
-            // 1) Ruta absoluta guardada en la BD (funciona en Linux si la ruta existe)
+
             if (fs.existsSync(foto_url)) {
                 realPath = foto_url;
             } else {
-                // 2) Buscar el archivo en el directorio uploads (búsqueda case-insensitive)
                 try {
                     if (fs.existsSync(uploadsDir)) {
                         const files = fs.readdirSync(uploadsDir);
                         const fileMatch = files.find(f => f.toLowerCase() === nombreFoto.toLowerCase());
-                        if (fileMatch) realPath = path.join(uploadsDir, fileMatch);
+                        if (fileMatch) {
+                            realPath = path.join(uploadsDir, fileMatch);
+                        }
                     }
-                } catch (e) { }
-                // 3) Fallback: construir ruta directa
-                if (!realPath) realPath = path.join(uploadsDir, nombreFoto);
+                } catch (e) {
+                    // Ignorar error de lectura de uploads
+                }
+
+                if (!realPath) {
+                    realPath = path.join(uploadsDir, nombreFoto);
+                }
             }
+
             if (realPath && fs.existsSync(realPath)) {
                 try {
                     const imgBuffer = fs.readFileSync(realPath);
@@ -564,35 +630,47 @@ exports.getCredencial = async (req, res) => {
                 final_url = '/img/no_person.png';
             }
         }
-        // Determinar estado del trabajador (servidores.activo) y motivo si existe
-        let servidorActivo = null
-        let disableReason = null
+
+        let servidorActivo = null;
+        let disableReason = null;
+
         try {
-            const sres = await client.query(`SELECT activo, motivo, razon, motivo_deshabilitado, motivo_deshabilitado FROM servidores WHERE cedula = $1 LIMIT 1`, [cedula])
+            const sres = await client.query(
+                `SELECT activo, motivo, razon, motivo_deshabilitado FROM servidores WHERE cedula = $1 LIMIT 1`,
+                [cedula]
+            );
+
             if (sres.rows.length) {
-                servidorActivo = (typeof sres.rows[0].activo !== 'undefined') ? !!sres.rows[0].activo : null
-                const raw = sres.rows[0].motivo || sres.rows[0].razon || sres.rows[0].motivo_deshabilitado || sres.rows[0].motivo_deshabilitado || null
-                disableReason = normalizeReason(raw)
+                servidorActivo = (typeof sres.rows[0].activo !== 'undefined') ? !!sres.rows[0].activo : null;
+                const raw = sres.rows[0].motivo || sres.rows[0].razon || sres.rows[0].motivo_deshabilitado || null;
+                disableReason = normalizeReason(raw);
             }
         } catch (e) {
-            console.warn('No se pudo obtener estado/motivo desde servidores:', e && e.message ? e.message : e)
+            console.warn('No se pudo obtener estado/motivo desde servidores:', e && e.message ? e.message : e);
         }
 
-        // Determinar estado del carnet consultando la tabla historico (vigente) y posibles motivos
-        let carnetActivo = null
-        let histDisableReason = null
-        let histDisabledAt = null
+        let carnetActivo = null;
+        let histDisableReason = null;
+        let histDisabledAt = null;
+
         try {
-            const histRes = await client.query('SELECT vigente, motivo_deshabilitado, fecha_deshabilitado FROM historico WHERE cedula = $1 ORDER BY created_at DESC LIMIT 1', [cedula])
+            const histRes = await client.query(
+                'SELECT vigente, motivo_deshabilitado, fecha_deshabilitado FROM historico WHERE cedula = $1 ORDER BY created_at DESC LIMIT 1',
+                [cedula]
+            );
+
             if (histRes.rows.length) {
-                const row = histRes.rows[0]
-                if (typeof row.vigente !== 'undefined') carnetActivo = !!row.vigente
-                histDisableReason = row.motivo_deshabilitado || null
-                histDisabledAt = row.fecha_deshabilitado || null
+                const histRow = histRes.rows[0];
+                if (typeof histRow.vigente !== 'undefined') {
+                    carnetActivo = !!histRow.vigente;
+                }
+                histDisableReason = histRow.motivo_deshabilitado || null;
+                histDisabledAt = histRow.fecha_deshabilitado || null;
             }
         } catch (e) {
-            console.warn('No se pudo determinar estado de historico.vigente:', e && e.message ? e.message : e)
+            console.warn('No se pudo determinar estado de historico.vigente:', e && e.message ? e.message : e);
         }
+
         res.status(200).json({
             cedula: row.cedula,
             nombres: row.nombres,
@@ -603,14 +681,16 @@ exports.getCredencial = async (req, res) => {
             cargo: row.cargo,
             nivel: row.nivel,
             foto_url: final_url,
-            // Exponer ambos estados para que el frontend pueda renderizar correctamente.
             activo: (carnetActivo === null) ? true : carnetActivo,
             trabajador_activo: (servidorActivo === null) ? true : servidorActivo,
             disable_reason: histDisableReason || disableReason,
             disabled_at: histDisabledAt || null,
-            condicion: row.condicion || 'ACTIVO'
+            condicion: row.condicion || 'ACTIVO',
+            fecha_ingreso: row.fecha_ingreso || null,
+            ya_impreso: (carnetActivo === true),
         });
     } catch (err) {
+        console.error('[getCredencial] Error al buscar la credencial.', err);
         res.status(500).json({ error: 'Error al buscar la credencial.' });
     } finally {
         client.release();
@@ -906,6 +986,8 @@ exports.saveCredentialPrint = async (req, res) => {
         // Asegurarse que las columnas opcionales existen (opcional)
         try {
             await client.query(`ALTER TABLE historico ADD COLUMN IF NOT EXISTS printed_by integer`);
+            await client.query(`ALTER TABLE historico ADD COLUMN IF NOT EXISTS entregado boolean DEFAULT false`);
+            await client.query(`ALTER TABLE historico ADD COLUMN IF NOT EXISTS foto bytea`);
             await client.query(`DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'historico' AND column_name = 'reimpreso_de' AND data_type <> 'uuid') THEN
@@ -915,19 +997,23 @@ exports.saveCredentialPrint = async (req, res) => {
                     ALTER TABLE historico ADD COLUMN reimpreso_de uuid;
                 END IF;
             END$$;`);
-            console.log('[SAVE_CREDENTIAL_PRINT] Columnas printed_by y reimpreso_de verificadas/creadas.');
+            console.log('[SAVE_CREDENTIAL_PRINT] Columnas printed_by, entregado, foto y reimpreso_de verificadas/creadas.');
         } catch (e) {
             console.warn('No se pudo asegurar columnas opcionales en historico:', e.message);
         }
 
+        const fotoParam = fotoBuffer || null;
+
         // Insertar en la tabla historico incluyendo información de quién imprimió (si disponible)
         console.log(`[SAVE_CREDENTIAL_PRINT] Insertando nuevo registro para cédula: ${cedula}`);
         const printedBy = req.userId || req.body.printed_by || null;
+        const entregado = req.body.entregado === true || req.body.entregado === 'true';
         // Si anulamos un registro anterior, se utilizó last.id; captura como reimpreso_de
         const reimpresoDe = (typeof last !== 'undefined' && last && last.id) ? last.id : null;
-        await client.query(`
-            INSERT INTO historico (institucion, cedula, nombres, apellidos, unidad, cargo, foto, printed_by, reimpreso_de, vigente, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, NOW())
+        const insertResult = await client.query(`
+            INSERT INTO historico (institucion, cedula, nombres, apellidos, unidad, cargo, foto, printed_by, reimpreso_de, vigente, entregado, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, NOW())
+            RETURNING id
         `, [
             servidor.institucion,
             servidor.cedula,
@@ -935,11 +1021,13 @@ exports.saveCredentialPrint = async (req, res) => {
             servidor.apellidos,
             servidor.area,
             servidor.cargo,
-            fotoBuffer,
+            fotoParam,
             printedBy,
-            reimpresoDe
+            reimpresoDe,
+            entregado
         ]);
-        console.log('[SAVE_CREDENTIAL_PRINT] Nuevo registro insertado con posible referencia reimpreso_de.');
+        const historyId = insertResult.rows[0] && insertResult.rows[0].id ? insertResult.rows[0].id : null;
+        console.log('[SAVE_CREDENTIAL_PRINT] Nuevo registro insertado con historial id:', historyId, 'entregado:', entregado);
 
         await client.query('COMMIT');
         console.log('[SAVE_CREDENTIAL_PRINT] Transacción completada (COMMIT).');
@@ -948,7 +1036,9 @@ exports.saveCredentialPrint = async (req, res) => {
             message: 'Histórico de impresión guardado exitosamente.',
             cedula: servidor.cedula,
             nombres: servidor.nombres,
-            apellidos: servidor.apellidos
+            apellidos: servidor.apellidos,
+            historyId,
+            entregado
         });
     } catch (err) {
         console.error('[SAVE_CREDENTIAL_PRINT] Error, revirtiendo transacción.', err && err.stack ? err.stack : err);
@@ -981,7 +1071,7 @@ exports.seekServer = async (req, res) => {
 };
 exports.updateServer = async (req, res) => {
     const { cedula } = req.params;
-    const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id, condicion } = req.body;
+    const { area_id, institucion_id, sede_id, nombres, apellidos, cargo_id, condicion, fecha_ingreso } = req.body;
     const client = await pool.connect();
     const fs = require('fs');
     let fotoPath = req.file && req.file.path ? req.file.path : null;
@@ -1037,6 +1127,12 @@ exports.updateServer = async (req, res) => {
             updates.push(`cargo_id = $${values.length + 1}`);
             values.push(isNaN(val) ? null : val);
         }
+        if (fecha_ingreso !== undefined) {
+            // Allow clearing the date by sending empty string or explicit null
+            const fechaVal = (fecha_ingreso === '' || fecha_ingreso === null || fecha_ingreso === 'null' || fecha_ingreso === 'undefined') ? null : fecha_ingreso;
+            updates.push(`fecha_ingreso = $${values.length + 1}`);
+            values.push(fechaVal);
+        }
         if (nombres !== undefined) {
             updates.push(`nombres = $${values.length + 1}`);
             values.push(nombres.toUpperCase());
@@ -1055,6 +1151,8 @@ exports.updateServer = async (req, res) => {
             const query = `UPDATE servidores SET ${updates.join(', ')}, updated_at = NOW() WHERE cedula = $${values.length + 1}`;
             const queryValues = [...values, cedula];
             console.log('SQL DEBUG [updateServidores]:', query, 'params:', queryValues);
+            console.log('SQL DEBUG [updateServidores] updates array:', updates);
+            console.log('SQL DEBUG [updateServidores] values array:', values);
             await client.query(query, queryValues);
         } else {
             console.log('No hay cambios en campos de texto para servidores.');
@@ -1220,10 +1318,56 @@ exports.elderState = async (req, res) => {
 exports.serverPosition = async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('SELECT id,cargo FROM cargos ORDER BY cargo');
+        try {
+            await client.query("ALTER TABLE cargos ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        const result = await client.query('SELECT id,cargo FROM cargos WHERE deleted_at IS NULL ORDER BY cargo');
         res.status(200).json(result.rows);
     } catch (err) {
         res.status(500).json({ error: 'Error al listar los cargos.' });
+    } finally {
+        client.release();
+    }
+};
+
+exports.createPosition = async (req, res) => {
+    const { cargo } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('INSERT INTO cargos (cargo) VALUES ($1)', [cargo]);
+        res.status(201).json({ message: 'Cargo creado exitosamente.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Error al crear el cargo.' });
+    } finally {
+        client.release();
+    }
+};
+
+exports.updatePosition = async (req, res) => {
+    const { id } = req.params;
+    const { cargo } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('UPDATE cargos SET cargo = $1 WHERE id = $2', [cargo, id]);
+        res.status(200).json({ message: 'Cargo actualizado exitosamente.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Error al actualizar el cargo.' });
+    } finally {
+        client.release();
+    }
+};
+
+exports.deletePosition = async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
+    try {
+        try {
+            await client.query("ALTER TABLE cargos ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        await client.query('UPDATE cargos SET deleted_at = NOW() WHERE id = $1', [id]);
+        res.status(200).json({ message: 'Cargo eliminado lógicamente.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Error al eliminar el cargo.' });
     } finally {
         client.release();
     }
@@ -1963,46 +2107,25 @@ exports.deleteInstitutionPermanently = async (req, res) => {
 // ================================
 // Crear sede
 exports.createHeadquarter = async (req, res) => {
-    const { username, email, password } = req.body;
-
-    // Validar el formato del password
-    const passwordErrors = validatePassword(password);
-    if (passwordErrors.length > 0) {
-        return res.status(400).json({ errors: passwordErrors });
-    }
-
-    const hashedPassword = await hashPassword(password);
-
+    const { sede } = req.body;
     const client = await pool.connect();
     try {
-        await client.query('BEGIN');
-
-        // Crear usuario
-        const result = await client.query(
-            'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-            [username, email, hashedPassword]
-        );
-        const userId = result.rows[0].id;
-
-        // Generar token de verificación
-        const token = generateSecureToken();
-        // Enviar correo de verificación
-        const verificationLink = `https://intranet.minaamp.gob.ve/verify-email?token=${token}`;
-        await sendEmail(email, 'Verifica tu correo', `Haz clic en el siguiente enlace para verificar tu correo: ${verificationLink}`);
-
-        await client.query('COMMIT');
-        res.status(201).json({ message: 'Usuario creado exitosamente. Se ha enviado un correo de verificación.' });
+        await client.query('INSERT INTO sedes (sede) VALUES ($1)', [sede]);
+        res.status(201).json({ message: 'Sede creada exitosamente.' });
     } catch (err) {
-        await client.query('ROLLBACK');
-        res.status(500).json({ error: 'Error al crear el usuario.' });
+        res.status(500).json({ error: 'Error al crear la sede.' });
     } finally {
         client.release();
     }
 };
+
 // Listar Sedes
 exports.listHeadquarters = async (req, res) => {
     const client = await pool.connect();
     try {
+        try {
+            await client.query("ALTER TABLE sedes ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
         const result = await client.query('SELECT a.id,a.sede FROM sedes a WHERE a.deleted_at IS NULL ORDER BY a.id ASC');
         res.status(200).json(result.rows);
     } catch (err) {
@@ -2014,15 +2137,14 @@ exports.listHeadquarters = async (req, res) => {
 
 // Actualizar sede
 exports.updateHeadquarter = async (req, res) => {
-    const { userId } = req.params;
-    const { username, email } = req.body;
-
+    const { id } = req.params;
+    const { sede } = req.body;
     const client = await pool.connect();
     try {
-        await client.query('UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3', [username, email, userId]);
-        res.status(200).json({ message: 'Usuario actualizado exitosamente.' });
+        await client.query('UPDATE sedes SET sede = $1 WHERE id = $2', [sede, id]);
+        res.status(200).json({ message: 'Sede actualizada exitosamente.' });
     } catch (err) {
-        res.status(500).json({ error: 'Error al actualizar el usuario.' });
+        res.status(500).json({ error: 'Error al actualizar la sede.' });
     } finally {
         client.release();
     }
@@ -2030,29 +2152,16 @@ exports.updateHeadquarter = async (req, res) => {
 
 // Eliminar sede (Borrado Lógico)
 exports.deleteHeadquarter = async (req, res) => {
-    const { userId } = req.params;
-
+    const { id } = req.params;
     const client = await pool.connect();
     try {
-        await client.query('UPDATE users SET deleted_at = NOW() WHERE id = $1', [userId]);
-        res.status(200).json({ message: 'Usuario eliminado lógicamente.' });
+        try {
+            await client.query("ALTER TABLE sedes ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        await client.query('UPDATE sedes SET deleted_at = NOW() WHERE id = $1', [id]);
+        res.status(200).json({ message: 'Sede eliminada lógicamente.' });
     } catch (err) {
-        res.status(500).json({ error: 'Error al eliminar el usuario.' });
-    } finally {
-        client.release();
-    }
-};
-
-// Eliminar sede (Borrado Físico)
-exports.deleteHeadquarterPermanently = async (req, res) => {
-    const { userId } = req.params;
-
-    const client = await pool.connect();
-    try {
-        await client.query('DELETE FROM users WHERE id = $1', [userId]);
-        res.status(200).json({ message: 'Usuario eliminado permanentemente.' });
-    } catch (err) {
-        res.status(500).json({ error: 'Error al eliminar el usuario permanentemente.' });
+        res.status(500).json({ error: 'Error al eliminar la sede.' });
     } finally {
         client.release();
     }
@@ -2063,38 +2172,13 @@ exports.deleteHeadquarterPermanently = async (req, res) => {
 // ================================
 // Crear area
 exports.createArea = async (req, res) => {
-    const { username, email, password } = req.body;
-
-    // Validar el formato del password
-    const passwordErrors = validatePassword(password);
-    if (passwordErrors.length > 0) {
-        return res.status(400).json({ errors: passwordErrors });
-    }
-
-    const hashedPassword = await hashPassword(password);
-
+    const { area } = req.body;
     const client = await pool.connect();
     try {
-        await client.query('BEGIN');
-
-        // Crear usuario
-        const result = await client.query(
-            'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-            [username, email, hashedPassword]
-        );
-        const userId = result.rows[0].id;
-
-        // Generar token de verificación
-        const token = generateSecureToken();
-        // Enviar correo de verificación
-        const verificationLink = `https://intranet.minaamp.gob.ve/verify-email?token=${token}`;
-        await sendEmail(email, 'Verifica tu correo', `Haz clic en el siguiente enlace para verificar tu correo: ${verificationLink}`);
-
-        await client.query('COMMIT');
-        res.status(201).json({ message: 'Usuario creado exitosamente. Se ha enviado un correo de verificación.' });
+        await client.query('INSERT INTO areas (area) VALUES ($1)', [area]);
+        res.status(201).json({ message: 'Área creada exitosamente.' });
     } catch (err) {
-        await client.query('ROLLBACK');
-        res.status(500).json({ error: 'Error al crear el usuario.' });
+        res.status(500).json({ error: 'Error al crear el área.' });
     } finally {
         client.release();
     }
@@ -2103,8 +2187,10 @@ exports.createArea = async (req, res) => {
 exports.listAreas = async (req, res) => {
     const client = await pool.connect();
     try {
-        const result = await client.query('SELECT id AS area_id,a.area FROM areas a  WHERE a.deleted_at IS NULL ORDER BY a.id ASC');
-        // const result = await client.query('SELECT a.institucion_id,b.institucion,a.sede_id,c.sede,a.id AS area_id,a.area FROM areas a LEFT JOIN instituciones b ON b.id = a.institucion_id LEFT JOIN sedes c ON c.id = a.sede_id WHERE a.deleted_at IS NULL ORDER BY a.institucion_id,a.sede_id,a.id ASC');
+        try {
+            await client.query("ALTER TABLE areas ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        const result = await client.query('SELECT id AS area_id,a.area FROM areas a WHERE a.deleted_at IS NULL ORDER BY a.id ASC');
         res.status(200).json(result.rows);
     } catch (err) {
         res.status(500).json({ error: 'Error al listar las áreas.' });
@@ -2115,15 +2201,14 @@ exports.listAreas = async (req, res) => {
 
 // Actualizar area
 exports.updateArea = async (req, res) => {
-    const { userId } = req.params;
-    const { username, email } = req.body;
-
+    const { id } = req.params;
+    const { area } = req.body;
     const client = await pool.connect();
     try {
-        await client.query('UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3', [username, email, userId]);
-        res.status(200).json({ message: 'Usuario actualizado exitosamente.' });
+        await client.query('UPDATE areas SET area = $1 WHERE id = $2', [area, id]);
+        res.status(200).json({ message: 'Área actualizada exitosamente.' });
     } catch (err) {
-        res.status(500).json({ error: 'Error al actualizar el usuario.' });
+        res.status(500).json({ error: 'Error al actualizar el área.' });
     } finally {
         client.release();
     }
@@ -2131,29 +2216,16 @@ exports.updateArea = async (req, res) => {
 
 // Eliminar area (Borrado Lógico)
 exports.deleteArea = async (req, res) => {
-    const { userId } = req.params;
-
+    const { id } = req.params;
     const client = await pool.connect();
     try {
-        await client.query('UPDATE users SET deleted_at = NOW() WHERE id = $1', [userId]);
-        res.status(200).json({ message: 'Usuario eliminado lógicamente.' });
+        try {
+            await client.query("ALTER TABLE areas ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        await client.query('UPDATE areas SET deleted_at = NOW() WHERE id = $1', [id]);
+        res.status(200).json({ message: 'Área eliminada lógicamente.' });
     } catch (err) {
-        res.status(500).json({ error: 'Error al eliminar el usuario.' });
-    } finally {
-        client.release();
-    }
-};
-
-// Eliminar area (Borrado Físico)
-exports.deleteAreaPermanently = async (req, res) => {
-    const { userId } = req.params;
-
-    const client = await pool.connect();
-    try {
-        await client.query('DELETE FROM users WHERE id = $1', [userId]);
-        res.status(200).json({ message: 'Usuario eliminado permanentemente.' });
-    } catch (err) {
-        res.status(500).json({ error: 'Error al eliminar el usuario permanentemente.' });
+        res.status(500).json({ error: 'Error al eliminar el área.' });
     } finally {
         client.release();
     }
@@ -2169,6 +2241,10 @@ exports.createUser = async (req, res) => {
     const { first_name, last_name, cedula, email, password, roles } = req.body;
 
     console.log('createUser payload roles:', roles);
+
+    if (!email || typeof email !== 'string') {
+        return res.status(400).json({ error: 'Se requiere un email válido.' });
+    }
 
     // Validar el formato del password
     const passwordErrors = validatePassword(password);
@@ -3598,3 +3674,4 @@ exports.getServerMassUploadErrorsByFile = async (req, res) => {
         client.release();
     }
 };
+
