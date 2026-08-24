@@ -1,3 +1,4 @@
 bd/
 back/uploads/
 *.sql
+*.backup
