@@ -26,7 +26,16 @@ const {
     readRenac,
     listInstitutions,
     listHeadquarters,
+    createHeadquarter,
+    updateHeadquarter,
+    deleteHeadquarter,
     listAreas,
+    createArea,
+    updateArea,
+    deleteArea,
+    createPosition,
+    updatePosition,
+    deletePosition,
     createUser,
     verifyEmail,
     changePassword,
@@ -58,6 +67,7 @@ const {
     getServerMassUploadLatestDB,
     getServerMassUploadErrorsByFile,
     listCredentialHistory,
+    updateCredentialDelivered,
     getCredencialPage,
 } = require('./controllers');
 const {
@@ -101,6 +111,8 @@ router.post('/cargar_fotos_masivas/log_failed_attempt', (req, res, next) => {
 router.post('/credencial/historico', authenticate, saveCredentialPrint);
 // Listar histórico de impresiones (protegido)
 router.get('/credencial/historico', authenticate, listCredentialHistory);
+// Actualizar estado de entrega (entregado)
+router.patch('/credencial/historico/:id/entregado', authenticate, updateCredentialDelivered);
 // Buscar credencial por cédula (debe ir después de las rutas específicas)
 router.get('/credencial/:cedula', getCredencial);
 // Página pública utilizada por los códigos QR para mostrar información de credenciales
@@ -218,7 +230,17 @@ router.get('/servidores_estados', serverState)
 router.get('/servidores_cargos', serverPosition);
 router.get('/instituciones', listInstitutions); // Listar servidores por institución
 router.get('/sedes', listHeadquarters); // Listar sedes
+router.post('/sedes', authenticate, authorize('view_admin'), createHeadquarter);
+router.put('/sedes/:id', authenticate, authorize('view_admin'), updateHeadquarter);
+router.delete('/sedes/:id', authenticate, authorize('view_admin'), deleteHeadquarter);
 router.get('/areas', listAreas); // Listar areas
+router.post('/areas', authenticate, authorize('view_admin'), createArea);
+router.put('/areas/:id', authenticate, authorize('view_admin'), updateArea);
+router.delete('/areas/:id', authenticate, authorize('view_admin'), deleteArea);
+router.get('/cargos', serverPosition); // Listar cargos (público para usar en dropdowns)
+router.post('/cargos', authenticate, authorize('view_admin'), createPosition);
+router.put('/cargos/:id', authenticate, authorize('view_admin'), updatePosition);
+router.delete('/cargos/:id', authenticate, authorize('view_admin'), deletePosition);
 router.get('/session-settings/global', authenticate, authorize('get_global_session_settings'), getGlobalSessionTimeout);
 router.patch('/session-settings/global', authenticate, authorize('update_global_session_settings'), updateGlobalSessionTimeout);
 router.patch('/users/:userId/session-timeout', authenticate, authorize('update_user_session_timeout'), updateUserSessionTimeout);

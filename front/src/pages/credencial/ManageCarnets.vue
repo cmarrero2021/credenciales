@@ -4,10 +4,22 @@
       <div class="col">
         <h5>Gestión de Carnets</h5>
       </div>
+      <div class="col-auto" v-if="isRRHHOnly">
+        <q-toggle
+          v-model="showEgresoOnly"
+          label="Solo Egresados"
+          color="orange"
+          dense square
+        />
+      </div>
+      <div class="col-auto" v-if="isRRHHOnly && showEgresoOnly">
+        <q-btn label="Reporte Excel" icon="summarize" color="secondary" @click="exportEgresoReport" />
+        <q-btn label="Reporte PDF" icon="picture_as_pdf" color="red" class="q-ml-sm" @click="exportEgresoPDF" />
+      </div>
       <div class="col-auto">
         <q-btn label="Refrescar" icon="refresh" color="primary" @click="loadData" />
       </div>
-      <div class="col-auto">
+      <div class="col-auto" v-if="!isRRHHOnly">
         <q-btn label="Exportar Excel" icon="download" color="green" class="q-ml-sm" @click="exportToExcel" />
         <q-btn label="Exportar PDF" icon="picture_as_pdf" color="red" class="q-ml-sm" @click="exportToPDF" />
       </div>
@@ -187,28 +199,37 @@ const selected = ref(null)
 
 const filterDateStart = ref('')
 const filterDateEnd = ref('')
+const showEgresoOnly = ref(false)
 
 const filteredRows = computed(() => {
   let data = rows.value
-  if (filterDateStart.value) {
-    const start = new Date(filterDateStart.value + 'T00:00:00')
-    data = data.filter(r => r.created_at && new Date(r.created_at) >= start)
-  }
-  if (filterDateEnd.value) {
-    const end = new Date(filterDateEnd.value + 'T23:59:59')
-    data = data.filter(r => r.created_at && new Date(r.created_at) <= end)
-  }
-  if (filter.value) {
-    const q = filter.value.toString().toLowerCase()
+
+  if (showEgresoOnly.value && isRRHHOnly.value) {
     data = data.filter(r => {
-      return String(r.cedula || '').toLowerCase().includes(q)
-        || String(r.nombres || '').toLowerCase().includes(q)
-        || String(r.apellidos || '').toLowerCase().includes(q)
-        || String(r.cargo || '').toLowerCase().includes(q)
-        || String(r.area || '').toLowerCase().includes(q)
-        || String(r.institucion || '').toLowerCase().includes(q)
-        || String(r.abreviacion || r.institucion_abreviada || '').toLowerCase().includes(q)
+      const reason = String(r.disable_reason || r.reason || r.motivo || '').toLowerCase()
+      return reason.includes('egreso')
     })
+  } else {
+    if (filterDateStart.value) {
+      const start = new Date(filterDateStart.value + 'T00:00:00')
+      data = data.filter(r => r.created_at && new Date(r.created_at) >= start)
+    }
+    if (filterDateEnd.value) {
+      const end = new Date(filterDateEnd.value + 'T23:59:59')
+      data = data.filter(r => r.created_at && new Date(r.created_at) <= end)
+    }
+    if (filter.value) {
+      const q = filter.value.toString().toLowerCase()
+      data = data.filter(r => {
+        return String(r.cedula || '').toLowerCase().includes(q)
+          || String(r.nombres || '').toLowerCase().includes(q)
+          || String(r.apellidos || '').toLowerCase().includes(q)
+          || String(r.cargo || '').toLowerCase().includes(q)
+          || String(r.area || '').toLowerCase().includes(q)
+          || String(r.institucion || '').toLowerCase().includes(q)
+          || String(r.abreviacion || r.institucion_abreviada || '').toLowerCase().includes(q)
+      })
+    }
   }
   return data
 })
@@ -741,6 +762,84 @@ async function confirmBatchPrint() {
   }
 }
 
+function exportEgresoReport() {
+  const egresoRows = filteredRows.value
+  if (!egresoRows.length) {
+    Notify.create({ type: 'warning', message: 'No hay carnets deshabilitados por egreso para exportar' })
+    return
+  }
+  const data = egresoRows.map(r => ({
+    'Cédula': r.cedula,
+    'Nombres': r.nombres,
+    'Apellidos': r.apellidos,
+    'Institución': r.institucion,
+    'Adscripción': r.area,
+    'Cargo': r.cargo,
+    'Fecha Impresión': r.created_at_fmt || r.created_at || '',
+    'Deshabilitado por': r.disabled_by || '',
+    'Fecha Deshabilitación': r.disabled_at_fmt || r.disabled_at || '',
+    'Motivo': r.disable_reason || '',
+    'Entregado': r.entregado ? 'Sí' : 'No',
+  }))
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Egresados')
+    XLSX.writeFile(workbook, 'Reporte_Egresados.xlsx')
+    Notify.create({ type: 'positive', message: `Reporte exportado: ${data.length} registro(s)` })
+  } catch (err) {
+    console.error('Error exportando reporte de egresados:', err)
+    Notify.create({ type: 'negative', message: 'Error al exportar reporte' })
+  }
+}
+
+function exportEgresoPDF() {
+  const egresoRows = filteredRows.value
+  if (!egresoRows.length) {
+    Notify.create({ type: 'warning', message: 'No hay carnets deshabilitados por egreso para exportar' })
+    return
+  }
+  const data = egresoRows.map(r => ({
+    'Cédula': r.cedula,
+    'Nombres': r.nombres,
+    'Apellidos': r.apellidos,
+    'Institución': r.institucion,
+    'Adscripción': r.area,
+    'Cargo': r.cargo,
+    'Fecha Impresión': r.created_at_fmt || r.created_at || '',
+    'Deshabilitado por': r.disabled_by || '',
+    'Fecha Deshab.': r.disabled_at_fmt || r.disabled_at || '',
+    'Motivo': r.disable_reason || '',
+    'Entregado': r.entregado ? 'Sí' : 'No',
+  }))
+  try {
+    const doc = new jsPDF('landscape')
+    const headers = Object.keys(data[0])
+    const body = data.map(obj => Object.values(obj).map(v => typeof v === 'string' ? v : String(v || '')))
+    doc.setFontSize(18)
+    doc.setTextColor(40, 40, 40)
+    doc.text('Reporte de Egresados', 14, 22)
+    doc.setFontSize(11)
+    doc.setTextColor(100)
+    doc.text(`Fecha: ${new Date().toLocaleString()} | Total: ${data.length} registro(s)`, 14, 30)
+    autoTable(doc, {
+      startY: 35,
+      head: [headers],
+      body: body,
+      theme: 'grid',
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      margin: { top: 35 }
+    })
+    doc.save('Reporte_Egresados.pdf')
+    Notify.create({ type: 'positive', message: `PDF exportado: ${data.length} registro(s)` })
+  } catch (err) {
+    console.error('Error exportando PDF de egresados:', err)
+    Notify.create({ type: 'negative', message: 'Error al exportar PDF' })
+  }
+}
+
 const router = useRouter()
 function openCredencialFor(row) {
   if (!row || !row.cedula) return
@@ -861,10 +960,9 @@ function openCredencial() {
 }
 
 // Imprimir un lote de carnets: abrir una ventana con tarjetas imprimibles
-async function printBatch() {
+async function printBatch(itemsParam) {
   try {
-    // Genera un PDF de tamaño A4 completo usando jsPDF en el navegador para que la credencial ocupe exactamente toda la hoja.
-    const items = (typeof selectedRows !== 'undefined' && selectedRows && selectedRows.length) ? selectedRows : (rows.value && rows.value.length ? rows.value : [])
+    const items = itemsParam || (rows.value && rows.value.length ? rows.value : [])
     if (!items.length) {
       Notify.create({ type: 'warning', message: 'No hay registros para imprimir' })
       return
@@ -957,16 +1055,12 @@ async function fetchAreas(){
           areasOptions.value = res.data.map(item => ({ label: item.area, value: item.area_id }))
       }
     }
-    // reserva: extraer de filas cargadas si el endpoint no devuelve datos o no está configurado,
-    // para asegurar que al menos las áreas presentes en los registros históricos estén disponibles como opciones
     if ((!areasOptions.value || areasOptions.value.length === 0) && rows.value.length){
       const uniq = [...new Set(rows.value.map(r => ({ area: r.area, area_id: r.area_id })).filter(x => x.area))]
       areasOptions.value = uniq.map(x => ({ label: x.area, value: x.area_id }))
     }
   }catch(e){
     console.error('Error fetchAreas', e)
-    // alternativa aún: usar filas cargadas para extraer áreas si el endpoint falla o no está configurado,
-    // para asegurar que al menos las áreas presentes en los registros históricos estén disponibles como opciones
     if (rows.value.length){
       const uniq = [...new Set(rows.value.map(r => ({ area: r.area, area_id: r.area_id })).filter(x => x.area))]
       areasOptions.value = uniq.map(x => ({ label: x.area, value: x.area_id }))

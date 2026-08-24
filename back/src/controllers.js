@@ -476,10 +476,15 @@ exports.listServers = async (req, res) => {
         const result = await client.query(`
             SELECT a.id, a.institucion_id, a.institucion, a.sede_id, a.sede, a.area_id, a.area, a.cedula,
                    a.nombres as nombres, a.apellidos as apellidos, a.cargo_id, a.cargo,
-                   f.foto_url, s.condicion, s.activo as servidor_activo, s.fecha_ingreso
+                   f.foto_url, s.condicion, s.activo as servidor_activo, s.fecha_ingreso,
+                   h.id as historico_id, h.entregado
             FROM vservidores a
             LEFT JOIN fotos_usuarios f ON f.usuario_id = a.id
             LEFT JOIN servidores s ON s.id = a.id
+            LEFT JOIN LATERAL (
+                SELECT id, entregado FROM historico
+                WHERE cedula = a.cedula ORDER BY created_at DESC LIMIT 1
+            ) h ON true
             ${activeFilterClause}
             ORDER BY a.institucion_id, a.sede_id, a.area_id, a.cedula
         `);
@@ -1332,12 +1337,22 @@ exports.serverPosition = async (req, res) => {
 
 exports.createPosition = async (req, res) => {
     const { cargo } = req.body;
+    if (!cargo || !cargo.trim()) {
+        return res.status(400).json({ error: 'El nombre del cargo es requerido.' });
+    }
     const client = await pool.connect();
     try {
-        await client.query('INSERT INTO cargos (cargo) VALUES ($1)', [cargo]);
+        try {
+            await client.query("ALTER TABLE cargos ADD COLUMN IF NOT EXISTS deleted_at timestamptz");
+        } catch(e){}
+        await client.query('INSERT INTO cargos (cargo) VALUES ($1)', [cargo.trim()]);
         res.status(201).json({ message: 'Cargo creado exitosamente.' });
     } catch (err) {
-        res.status(500).json({ error: 'Error al crear el cargo.' });
+        console.error('Error createPosition:', err);
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Ya existe un cargo con ese nombre.' });
+        }
+        res.status(500).json({ error: 'Error al crear el cargo.', details: err.message });
     } finally {
         client.release();
     }

@@ -22,12 +22,15 @@
         <!-- Lista oculta: aplicamos filtros y cargamos la primera credencial con foto disponible -->
       </div>
     </div>
-    <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir" :color="isTooRecentIngreso(trabajador) ? 'grey' : 'secondary'" :disable="isTooRecentIngreso(trabajador)" @click="imprimirCredencial" class="q-mb-lg">
-      <q-tooltip v-if="isTooRecentIngreso(trabajador)">No se puede imprimir: el servidor tiene menos de 3 meses de ingreso</q-tooltip>
+    <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir" :color="ingresoBlockActive(trabajador) ? 'grey' : 'secondary'" :disable="ingresoBlockActive(trabajador)" @click="imprimirCredencial" class="q-mb-lg">
+      <q-tooltip v-if="isTooRecentIngreso(trabajador)">{{ ingresoBlockActive(trabajador) ? 'No se puede imprimir: el servidor tiene menos de 3 meses de ingreso' : 'Advertencia: el servidor tiene menos de 3 meses de ingreso (regla omitida por administrador)' }}</q-tooltip>
     </q-btn>
     <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir franja" color="amber-10" outline class="q-ml-sm q-mb-lg" @click="imprimirFranja" />
     <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir por lote" color="primary" outline class="q-ml-sm q-mb-lg" @click="batchDialog = true" />
     <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Franja por lote" color="warning" outline class="q-ml-sm q-mb-lg" @click="openFranjaBatchDialog" />
+    <q-toggle v-if="isAdmin" v-model="permitirIngresoReciente" label="Omitir regla < 3 meses" color="orange" dense class="q-ml-sm q-mb-lg">
+      <q-tooltip>Como administrador puedes desactivar la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso.</q-tooltip>
+    </q-toggle>
 
     <div v-if="trabajador" class="credencial-container">
       <!-- Parte delantera -->
@@ -399,6 +402,20 @@ function isTooRecentIngreso(item) {
   const cutoff = new Date()
   cutoff.setMonth(cutoff.getMonth() - 3)
   return ingreso > cutoff
+}
+
+// Override de administrador: permite imprimir carnets de servidores con menos de 3 meses de ingreso.
+// Se comparte entre páginas mediante LocalStorage ('permitir_ingreso_reciente').
+const isAdmin = computed(() => hasPermission('view_admin') || hasPermission('view_admin1'))
+const permitirIngresoReciente = ref(LocalStorage.getItem('permitir_ingreso_reciente') === true)
+watch(permitirIngresoReciente, v => {
+  LocalStorage.set('permitir_ingreso_reciente', !!v)
+})
+function canBypassIngreso() {
+  return isAdmin.value && permitirIngresoReciente.value
+}
+function ingresoBlockActive(item) {
+  return isTooRecentIngreso(item) && !canBypassIngreso()
 }
 
 const apiBase = (import.meta.env.VITE_API_URL || 'https://localhost:3001').replace(/\/+$/, '')
@@ -976,11 +993,12 @@ function confirmarOmitirFranjasLote() {
 }
 
 async function executeBatchPrint(enriched) {
-  const printable = enriched.filter(s => !isTooRecentIngreso(s))
+  const bypassIngreso = canBypassIngreso()
+  const printable = bypassIngreso ? enriched : enriched.filter(s => !isTooRecentIngreso(s))
   const excludedCount = enriched.length - printable.length
   if (excludedCount > 0) {
     Notify.create({
-      type: 'negative',
+      type: bypassIngreso ? 'warning' : 'negative',
       message: `Se excluyeron ${excludedCount} credenciales con fecha de ingreso menor a 3 meses.`
     })
   }
@@ -1145,11 +1163,17 @@ function imprimirCredencial() {
   if (!trabajador.value) return
 
   if (isTooRecentIngreso(trabajador.value)) {
+    if (!canBypassIngreso()) {
+      Notify.create({
+        type: 'negative',
+        message: 'No se puede imprimir la credencial: el trabajador tiene fecha de ingreso menor a 3 meses.'
+      })
+      return
+    }
     Notify.create({
-      type: 'negative',
-      message: 'No se puede imprimir la credencial: el trabajador tiene fecha de ingreso menor a 3 meses.'
+      type: 'warning',
+      message: 'Imprimiendo con regla de 3 meses omitida (administrador).'
     })
-    return
   }
 
   if (trabajador.value.ya_impreso === true) {

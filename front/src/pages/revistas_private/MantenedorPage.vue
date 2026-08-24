@@ -38,6 +38,15 @@
                 dense
                 square
               />
+              <q-toggle
+                v-if="isAdmin"
+                v-model="permitirIngresoReciente"
+                label="Omitir regla < 3 meses"
+                color="orange"
+                dense
+              >
+                <q-tooltip>Como administrador puedes desactivar la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso.</q-tooltip>
+              </q-toggle>
               <q-btn icon="fas fa-trash" title="Borrar todos los filtros" @click="clearAllFilters" color="negative" flat size="sm" />
             </div>
           </div>
@@ -88,6 +97,12 @@
                 <div class="col-auto">
                   <q-btn icon="visibility" label="VER ERRORES" title="Ver errores carga masiva" @click="openErrorsModal" color="orange" size="sm" v-if="(hasPermission('update_servidor') || hasPermission('view_admin')) && !isQuickEditMode" />
                 </div>
+                <div class="col-auto">
+                  <q-btn icon="summarize" label="Exportar Excel" title="Exportar a Excel según filtros aplicados" @click="exportServersExcel" color="secondary" size="sm" v-if="isAdmin && !isQuickEditMode" />
+                </div>
+                <div class="col-auto">
+                  <q-btn icon="picture_as_pdf" label="Exportar PDF" title="Exportar a PDF según filtros aplicados" @click="exportServersPDF" color="red" size="sm" v-if="isAdmin && !isQuickEditMode" />
+                </div>
                 <input type="file" multiple accept="image/png, image/jpeg, image/jpg" ref="photoInput" style="display: none" @change="handleMassPhotoUpload" />
               </div>
             </div>
@@ -111,6 +126,20 @@
           <q-icon v-if="isTooRecentIngreso(props.row)" name="warning" color="orange" size="xs" class="q-ml-xs">
             <q-tooltip>Ingreso menor a 3 meses – No se puede imprimir carnet</q-tooltip>
           </q-icon>
+        </q-td>
+      </template>
+
+      <template v-slot:body-cell-entregado="props">
+        <q-td :props="props" align="center">
+          <template v-if="hasRealPhoto(props.row.foto_url)">
+            <q-checkbox
+              v-model="props.row.entregado"
+              dense
+              :disable="!props.row.historico_id"
+              @update:model-value="val => toggleEntregado(props.row, val)"
+            />
+          </template>
+          <span v-else>-</span>
         </q-td>
       </template>
 
@@ -354,6 +383,9 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { LocalStorage, Notify, useQuasar } from 'quasar'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 // Ordenamiento múltiple para la tabla
 const customSort = (rows, sortBy, descending) => {
@@ -695,6 +727,7 @@ const columns = [
   { name: 'cargo', label: 'Cargo', field: 'cargo', sortable: true, filterable: true, align: 'left', type: 'select' },
   { name: 'fecha_ingreso', label: 'Fecha de ingreso', field: 'fecha_ingreso', sortable: true, filterable: false, align: 'left', type: 'date' },
   { name: 'estado', label: 'Estado', field: 'estado', sortable: true, filterable: false, align: 'left', type: 'text' },
+  { name: 'entregado', label: 'Entregado', field: 'entregado', align: 'center', sortable: true },
 ];
 // Función para obtener la URL de la foto
 // Soporta base64 (data:image/...) devuelto por el backend en producción,
@@ -730,6 +763,37 @@ const getFotoUrl = (foto_url) => {
   // Fallback: avatar por defecto desde el frontend
   return DEFAULT_AVATAR;
 };
+
+function hasRealPhoto(foto_url) {
+  if (!foto_url) return false
+  if (foto_url === DEFAULT_AVATAR) return false
+  const normalized = foto_url.replace(/\\/g, '/')
+  if (normalized.includes('no_person.png') || normalized.includes('no_person.jpg')) return false
+  return true
+}
+
+async function toggleEntregado(row, val) {
+  if (!row.historico_id) {
+    Notify.create({ type: 'warning', message: 'Este servidor no tiene credencial impresa para marcar como entregado' })
+    row.entregado = false
+    return
+  }
+  try {
+    const token = (typeof LocalStorage.get === 'function') ? LocalStorage.get('token') : LocalStorage.getItem('token')
+    await axios.patch(`${apiBase}/auth/credencial/historico/${row.historico_id}/entregado`, { entregado: val }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    Notify.create({
+      type: 'positive',
+      message: val ? 'Carnet marcado como entregado' : 'Carnet marcado como pendiente de entrega',
+      timeout: 1500
+    })
+  } catch (err) {
+    console.error('Error toggling entregado:', err)
+    row.entregado = !val
+    Notify.create({ type: 'negative', message: 'Error al cambiar estado de entrega' })
+  }
+}
 
 const getPublicAssetUrl = (path) => {
   if (!path) return path;
@@ -792,6 +856,16 @@ const isRRHH = computed(() => hasPermission('update_historico'))
 const isAdmin = computed(() => hasPermission('view_admin') || hasPermission('view_admin1'))
 const stateFilter = ref(true)
 
+// Override de administrador: permite imprimir carnets de servidores con menos de 3 meses de ingreso.
+// Compartido con CredencialPage mediante LocalStorage ('permitir_ingreso_reciente').
+const permitirIngresoReciente = ref(LocalStorage.getItem('permitir_ingreso_reciente') === true)
+watch(permitirIngresoReciente, v => {
+  LocalStorage.set('permitir_ingreso_reciente', !!v)
+})
+function canBypassIngreso() {
+  return isAdmin.value && permitirIngresoReciente.value
+}
+
 // Estado de la aplicación
 const servers = ref([]);
 const loading = ref(true);
@@ -839,17 +913,27 @@ async function printBatchServidores(size = null) {
       return
     }
 
-    const tooRecentSelected = selectedRows.filter(isTooRecentIngreso)
-    if (tooRecentSelected.length > 0) {
-      const skipped = tooRecentSelected.map(s => s.cedula || s.id).join(', ')
-      Notify.create({
-        type: 'warning',
-        message: `Se excluyen ${tooRecentSelected.length} servidores con fecha de ingreso menor a 3 meses: ${skipped}`
-      })
-      selectedRows = selectedRows.filter(s => !isTooRecentIngreso(s))
-      if (!selectedRows.length) {
-        Notify.create({ type: 'negative', message: 'No hay carnets válidos para imprimir tras aplicar la restricción de ingreso.' })
-        return
+    if (!canBypassIngreso()) {
+      const tooRecentSelected = selectedRows.filter(isTooRecentIngreso)
+      if (tooRecentSelected.length > 0) {
+        const skipped = tooRecentSelected.map(s => s.cedula || s.id).join(', ')
+        Notify.create({
+          type: 'warning',
+          message: `Se excluyen ${tooRecentSelected.length} servidores con fecha de ingreso menor a 3 meses: ${skipped}`
+        })
+        selectedRows = selectedRows.filter(s => !isTooRecentIngreso(s))
+        if (!selectedRows.length) {
+          Notify.create({ type: 'negative', message: 'No hay carnets válidos para imprimir tras aplicar la restricción de ingreso.' })
+          return
+        }
+      }
+    } else {
+      const bypassedCount = selectedRows.filter(isTooRecentIngreso).length
+      if (bypassedCount > 0) {
+        Notify.create({
+          type: 'warning',
+          message: `Imprimiendo ${bypassedCount} servidor(es) con regla de 3 meses omitida (administrador).`
+        })
       }
     }
 
@@ -1618,6 +1702,78 @@ const filteredServers = computed(() => {
   });
 });
 /////////////////////////
+
+function buildServersExportData() {
+  const rows = filteredServers.value
+  return rows.map(r => ({
+    'Cédula': r.cedula ?? '',
+    'Nombres': r.nombres ?? '',
+    'Apellidos': r.apellidos ?? '',
+    'Institución': r.institucion ?? '',
+    'Sede': r.sede ?? '',
+    'Adscripción': r.area ?? '',
+    'Cargo': r.cargo ?? '',
+    'Fecha Ingreso': r.fecha_ingreso ? new Date(r.fecha_ingreso).toLocaleDateString() : '-',
+    'Condición': r.condicion || 'ACTIVO',
+    'Estado': (r.trabajador_activo === false || r.activo === false) ? 'INACTIVO' : 'ACTIVO',
+  }))
+}
+
+function exportServersExcel() {
+  const data = buildServersExportData()
+  if (!data.length) {
+    Notify.create({ type: 'warning', message: 'No hay servidores para exportar con los filtros aplicados' })
+    return
+  }
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    worksheet['!cols'] = [
+      { wch: 12 }, { wch: 25 }, { wch: 25 }, { wch: 30 },
+      { wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
+    ]
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Servidores')
+    XLSX.writeFile(workbook, `Servidores_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    Notify.create({ type: 'positive', message: `Excel exportado: ${data.length} registro(s)` })
+  } catch (err) {
+    console.error('Error exportando Excel de servidores:', err)
+    Notify.create({ type: 'negative', message: 'Error al exportar Excel' })
+  }
+}
+
+function exportServersPDF() {
+  const data = buildServersExportData()
+  if (!data.length) {
+    Notify.create({ type: 'warning', message: 'No hay servidores para exportar con los filtros aplicados' })
+    return
+  }
+  try {
+    const doc = new jsPDF('landscape')
+    const headers = Object.keys(data[0])
+    const body = data.map(obj => Object.values(obj).map(v => typeof v === 'string' ? v : String(v ?? '')))
+    doc.setFontSize(18)
+    doc.setTextColor(40, 40, 40)
+    doc.text('Reporte de Servidores', 14, 22)
+    doc.setFontSize(11)
+    doc.setTextColor(100)
+    doc.text(`Fecha: ${new Date().toLocaleString()} | Total: ${data.length} registro(s)`, 14, 30)
+    autoTable(doc, {
+      startY: 35,
+      head: [headers],
+      body,
+      theme: 'grid',
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      margin: { top: 35 }
+    })
+    doc.save(`Servidores_${new Date().toISOString().slice(0, 10)}.pdf`)
+    Notify.create({ type: 'positive', message: `PDF exportado: ${data.length} registro(s)` })
+  } catch (err) {
+    console.error('Error exportando PDF de servidores:', err)
+    Notify.create({ type: 'negative', message: 'Error al exportar PDF' })
+  }
+}
 
 // Función para guardar cambios (debe ser async y única)
 const saveChanges = async () => {
