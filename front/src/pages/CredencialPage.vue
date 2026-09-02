@@ -910,6 +910,7 @@ function openPrintWindow(html) {
 }
 
 async function batchPrint() {
+  await loadGlobalSetting()
   if (batchPrintMode.value === 'franja') {
     return batchFranjaPrint()
   }
@@ -965,6 +966,7 @@ async function batchPrint() {
 }
 
 async function batchFranjaPrint() {
+  await loadGlobalSetting()
   if (!franjaImpresionHabilitada()) {
     notifyFranjaDeshabilitada()
     return
@@ -1223,8 +1225,9 @@ onBeforeUnmount(() => {
   // cleanup if needed
 })
 
-function imprimirCredencial() {
+async function imprimirCredencial() {
   if (!trabajador.value) return
+  await loadGlobalSetting()
 
   if (isTooRecentIngreso(trabajador.value)) {
     if (!canBypassIngreso()) {
@@ -1249,8 +1252,9 @@ function imprimirCredencial() {
   executeIndividualPrint()
 }
 
-function imprimirFranja() {
+async function imprimirFranja() {
   if (!trabajador.value) return
+  await loadGlobalSetting()
   if (!franjaImpresionHabilitada()) {
     notifyFranjaDeshabilitada()
     return
@@ -1264,7 +1268,8 @@ function imprimirFranja() {
   executeFranjaPrint([trabajador.value])
 }
 
-function openFranjaBatchDialog() {
+async function openFranjaBatchDialog() {
+  await loadGlobalSetting()
   if (!franjaImpresionHabilitada()) {
     notifyFranjaDeshabilitada()
     return
