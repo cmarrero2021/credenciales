@@ -25,9 +25,13 @@
     <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir" :color="ingresoBlockActive(trabajador) ? 'grey' : 'secondary'" :disable="ingresoBlockActive(trabajador)" @click="imprimirCredencial" class="q-mb-lg">
       <q-tooltip v-if="isTooRecentIngreso(trabajador)">{{ ingresoBlockActive(trabajador) ? 'No se puede imprimir: el servidor tiene menos de 3 meses de ingreso' : 'Advertencia: el servidor tiene menos de 3 meses de ingreso (regla omitida por administrador)' }}</q-tooltip>
     </q-btn>
-    <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir franja" color="amber-10" outline class="q-ml-sm q-mb-lg" @click="imprimirFranja" />
+    <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir franja" color="amber-10" outline class="q-ml-sm q-mb-lg" :disable="!franjaImpresionHabilitada()" @click="imprimirFranja">
+      <q-tooltip v-if="!franjaImpresionHabilitada()">La impresión de la franja está deshabilitada por el administrador.</q-tooltip>
+    </q-btn>
     <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir por lote" color="primary" outline class="q-ml-sm q-mb-lg" @click="batchDialog = true" />
-    <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Franja por lote" color="warning" outline class="q-ml-sm q-mb-lg" @click="openFranjaBatchDialog" />
+    <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Franja por lote" color="warning" outline class="q-ml-sm q-mb-lg" :disable="!franjaImpresionHabilitada()" @click="openFranjaBatchDialog">
+      <q-tooltip v-if="!franjaImpresionHabilitada()">La impresión de la franja por lote está deshabilitada por el administrador.</q-tooltip>
+    </q-btn>
     <q-toggle v-if="isAdmin" :model-value="permitirIngresoReciente" :disable="cargandoSettingGlobal" label="Omitir regla < 3 meses" color="orange" dense class="q-ml-sm q-mb-lg" @update:model-value="setGlobalSetting">
       <q-tooltip>Como administrador puedes desactivar globalmente la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso. Esto aplica para TODOS los usuarios (administradores y usuarios comunes).</q-tooltip>
     </q-toggle>
@@ -745,6 +749,7 @@ function buildFrontalCardMarkup(item) {
   const apellidos = (item.apellidos || '').toUpperCase()
   const cargo = item.cargo || item.cargo_nombre || item.cargo_descripcion || item.cargo_text || ''
   const nivel = item.nivel || item.nivel_id || 1
+  const mostrarFranja = franjaImpresionHabilitada()
   const franjaText = (item.abreviacion && String(item.abreviacion).trim())
     ? String(item.abreviacion).trim()
     : (item.unidad || item.unidad_adscripcion || item.area || '')
@@ -760,9 +765,9 @@ function buildFrontalCardMarkup(item) {
         <div class="nombre">${nombre} ${apellidos}</div>
         <div class="cargo">${cargo}</div>
       </div>
-      <div class="${item.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + nivel}${isWideFranja(item) ? ' franja-w' : ''}">
+      ${mostrarFranja ? `<div class="${item.condicion === 'JUBILADO' ? 'franja-jubilado' : 'franja' + nivel}${isWideFranja(item) ? ' franja-w' : ''}">
         ${item.condicion === 'JUBILADO' ? 'JUBILADO' : franjaText}
-      </div>
+      </div>` : ''}
     </div>
   `
 }
