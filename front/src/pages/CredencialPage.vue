@@ -28,8 +28,11 @@
     <q-btn v-if="trabajador && (hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir franja" color="amber-10" outline class="q-ml-sm q-mb-lg" @click="imprimirFranja" />
     <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Imprimir por lote" color="primary" outline class="q-ml-sm q-mb-lg" @click="batchDialog = true" />
     <q-btn v-if="(hasPermission('print_credencial') || hasPermission('view_admin'))" label="Franja por lote" color="warning" outline class="q-ml-sm q-mb-lg" @click="openFranjaBatchDialog" />
-    <q-toggle v-if="isAdmin" v-model="permitirIngresoReciente" label="Omitir regla < 3 meses" color="orange" dense class="q-ml-sm q-mb-lg">
-      <q-tooltip>Como administrador puedes desactivar la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso.</q-tooltip>
+    <q-toggle v-if="isAdmin" :model-value="permitirIngresoReciente" :disable="cargandoSettingGlobal" label="Omitir regla < 3 meses" color="orange" dense class="q-ml-sm q-mb-lg" @update:model-value="setGlobalSetting">
+      <q-tooltip>Como administrador puedes desactivar globalmente la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso. Esto aplica para TODOS los usuarios (administradores y usuarios comunes).</q-tooltip>
+    </q-toggle>
+    <q-toggle v-if="isAdmin" :model-value="habilitarImpresionFranja" :disable="cargandoSettingGlobal" label="Habilitar impresión de franja" color="positive" dense class="q-ml-sm q-mb-lg" @update:model-value="setHabilitarFranja">
+      <q-tooltip>Como administrador puedes habilitar o deshabilitar globalmente la impresión de la franja (individual y por lote). Esto aplica para TODOS los usuarios (administradores y usuarios comunes).</q-tooltip>
     </q-toggle>
 
     <div v-if="trabajador" class="credencial-container">
@@ -405,12 +408,64 @@ function isTooRecentIngreso(item) {
 }
 
 // Override de administrador: permite imprimir carnets de servidores con menos de 3 meses de ingreso.
-// Se comparte entre páginas mediante LocalStorage ('permitir_ingreso_reciente').
+// Es una opción GLOBAL controlada por el admin y surte efecto para TODOS los roles
+// (administrador y usuario común). Se guarda en session_settings en la base de datos.
 const isAdmin = computed(() => hasPermission('view_admin') || hasPermission('view_admin1'))
-const permitirIngresoReciente = ref(LocalStorage.getItem('permitir_ingreso_reciente') === true)
-watch(permitirIngresoReciente, v => {
-  LocalStorage.set('permitir_ingreso_reciente', !!v)
+const permitirIngresoReciente = ref(false)
+const habilitarImpresionFranja = ref(true)
+const cargandoSettingGlobal = ref(false)
+
+async function loadGlobalSetting() {
+  try {
+    cargandoSettingGlobal.value = true
+    const res = await axios.get('/auth/session-settings/global')
+    permitirIngresoReciente.value = res.data?.omitirRegla3Meses === true
+    habilitarImpresionFranja.value = res.data?.habilitarImpresionFranja !== false
+  } catch (e) {
+    console.error('Error al cargar configuración global:', e)
+  } finally {
+    cargandoSettingGlobal.value = false
+  }
+}
+
+async function setGlobalSetting(value) {
+  const prev = permitirIngresoReciente.value
+  permitirIngresoReciente.value = !!value
+  try {
+    await axios.patch('/auth/session-settings/global', { omitirRegla3Meses: !!value })
+  } catch (e) {
+    permitirIngresoReciente.value = prev
+    console.error('Error al guardar configuración global:', e)
+  }
+}
+
+async function setHabilitarFranja(value) {
+  const prev = habilitarImpresionFranja.value
+  habilitarImpresionFranja.value = !!value
+  try {
+    await axios.patch('/auth/session-settings/global', { habilitarImpresionFranja: !!value })
+  } catch (e) {
+    habilitarImpresionFranja.value = prev
+    console.error('Error al guardar configuración de franja:', e)
+  }
+}
+
+function franjaImpresionHabilitada() {
+  return habilitarImpresionFranja.value
+}
+
+function notifyFranjaDeshabilitada() {
+  Notify.create({
+    type: 'warning',
+    message: 'La impresión de la franja está deshabilitada por el administrador.',
+    timeout: 3000
+  })
+}
+
+onMounted(async () => {
+  await loadGlobalSetting()
 })
+
 function canBypassIngreso() {
   return isAdmin.value && permitirIngresoReciente.value
 }
@@ -905,6 +960,10 @@ async function batchPrint() {
 }
 
 async function batchFranjaPrint() {
+  if (!franjaImpresionHabilitada()) {
+    notifyFranjaDeshabilitada()
+    return
+  }
   const selectedCedulas = normalizeFranjaSelection(franjaSelectedServerIds.value)
   let list = servidores.value || []
 
@@ -1187,6 +1246,10 @@ function imprimirCredencial() {
 
 function imprimirFranja() {
   if (!trabajador.value) return
+  if (!franjaImpresionHabilitada()) {
+    notifyFranjaDeshabilitada()
+    return
+  }
   const key = String(trabajador.value.cedula)
   if (franjaPrintedMap.value[key]) {
     reprintDialogMode.value = 'franja'
@@ -1197,6 +1260,10 @@ function imprimirFranja() {
 }
 
 function openFranjaBatchDialog() {
+  if (!franjaImpresionHabilitada()) {
+    notifyFranjaDeshabilitada()
+    return
+  }
   franjaSearchText.value = ''
   batchFranjaDialog.value = true
 }
@@ -1208,6 +1275,10 @@ function confirmarReimpresion() {
 
 function confirmarReimpresionFranja() {
   reprintDialog.value = false
+  if (!franjaImpresionHabilitada()) {
+    notifyFranjaDeshabilitada()
+    return
+  }
   executeFranjaPrint([trabajador.value])
 }
 

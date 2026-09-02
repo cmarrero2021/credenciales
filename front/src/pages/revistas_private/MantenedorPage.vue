@@ -40,12 +40,25 @@
               />
               <q-toggle
                 v-if="isAdmin"
-                v-model="permitirIngresoReciente"
+                :model-value="permitirIngresoReciente"
+                :disable="cargandoSettingGlobal"
                 label="Omitir regla < 3 meses"
                 color="orange"
                 dense
+                @update:model-value="setGlobalSetting"
               >
-                <q-tooltip>Como administrador puedes desactivar la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso.</q-tooltip>
+                <q-tooltip>Como administrador puedes desactivar globalmente la restricción que bloquea la impresión de carnets a servidores con menos de 3 meses desde su fecha de ingreso. Esto aplica para TODOS los usuarios (administradores y usuarios comunes).</q-tooltip>
+              </q-toggle>
+              <q-toggle
+                v-if="isAdmin"
+                :model-value="habilitarImpresionFranja"
+                :disable="cargandoSettingGlobal"
+                label="Habilitar impresión de franja"
+                color="positive"
+                dense
+                @update:model-value="setHabilitarFranja"
+              >
+                <q-tooltip>Como administrador puedes habilitar o deshabilitar globalmente la impresión de la franja (individual y por lote). Esto aplica para TODOS los usuarios (administradores y usuarios comunes).</q-tooltip>
               </q-toggle>
               <q-btn icon="fas fa-trash" title="Borrar todos los filtros" @click="clearAllFilters" color="negative" flat size="sm" />
             </div>
@@ -857,11 +870,47 @@ const isAdmin = computed(() => hasPermission('view_admin') || hasPermission('vie
 const stateFilter = ref(true)
 
 // Override de administrador: permite imprimir carnets de servidores con menos de 3 meses de ingreso.
-// Compartido con CredencialPage mediante LocalStorage ('permitir_ingreso_reciente').
-const permitirIngresoReciente = ref(LocalStorage.getItem('permitir_ingreso_reciente') === true)
-watch(permitirIngresoReciente, v => {
-  LocalStorage.set('permitir_ingreso_reciente', !!v)
-})
+// Es una opción GLOBAL controlada por el admin y surte efecto para TODOS los roles
+// (administrador y usuario común). Se guarda en session_settings en la base de datos.
+const permitirIngresoReciente = ref(false)
+const habilitarImpresionFranja = ref(true)
+const cargandoSettingGlobal = ref(false)
+
+async function loadGlobalSetting() {
+  try {
+    cargandoSettingGlobal.value = true
+    const res = await axios.get('/auth/session-settings/global')
+    permitirIngresoReciente.value = res.data?.omitirRegla3Meses === true
+    habilitarImpresionFranja.value = res.data?.habilitarImpresionFranja !== false
+  } catch (e) {
+    console.error('Error al cargar configuración global:', e)
+  } finally {
+    cargandoSettingGlobal.value = false
+  }
+}
+
+async function setGlobalSetting(value) {
+  const prev = permitirIngresoReciente.value
+  permitirIngresoReciente.value = !!value
+  try {
+    await axios.patch('/auth/session-settings/global', { omitirRegla3Meses: !!value })
+  } catch (e) {
+    permitirIngresoReciente.value = prev
+    console.error('Error al guardar configuración global:', e)
+  }
+}
+
+async function setHabilitarFranja(value) {
+  const prev = habilitarImpresionFranja.value
+  habilitarImpresionFranja.value = !!value
+  try {
+    await axios.patch('/auth/session-settings/global', { habilitarImpresionFranja: !!value })
+  } catch (e) {
+    habilitarImpresionFranja.value = prev
+    console.error('Error al guardar configuración de franja:', e)
+  }
+}
+
 function canBypassIngreso() {
   return isAdmin.value && permitirIngresoReciente.value
 }
@@ -1963,6 +2012,7 @@ onMounted(async () => {
       return
     }
     await fetchOptions()
+    loadGlobalSetting()
     // Only fetch servers if the user has permission to read servers
     const canRead = hasPermission('read_servidor') || hasPermission('view_admin')
     console.log('MantenedorPage canRead:', canRead)

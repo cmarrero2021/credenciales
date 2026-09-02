@@ -3176,14 +3176,18 @@ exports.updateRevista = async (req, res) => {
 exports.getGlobalSessionTimeout = async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT global_timeout FROM session_settings WHERE id = 1'
+            'SELECT global_timeout, omitir_regla_3_meses, habilitar_impresion_franja FROM session_settings WHERE id = 1'
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Configuración global no encontrada' });
         }
 
-        res.json({ timeout: result.rows[0].global_timeout });
+        res.json({
+            timeout: result.rows[0].global_timeout,
+            omitirRegla3Meses: result.rows[0].omitir_regla_3_meses,
+            habilitarImpresionFranja: result.rows[0].habilitar_impresion_franja
+        });
     } catch (err) {
         console.error('❌ Error al obtener configuración global:', err.message);
         res.status(500).json({ error: 'Error al obtener la configuración global de sesión' });
@@ -3191,22 +3195,48 @@ exports.getGlobalSessionTimeout = async (req, res) => {
 };
 // Actualizar configuración global de sesión
 exports.updateGlobalSessionTimeout = async (req, res) => {
-    const { timeout } = req.body;
+    const { timeout, omitirRegla3Meses, habilitarImpresionFranja } = req.body;
+    const sets = [];
+    const values = [];
 
-    if (!timeout || typeof timeout !== 'number' || timeout <= 0) {
-        return res.status(400).json({ error: 'La duración debe ser un número positivo.' });
+    if (timeout !== undefined) {
+        if (typeof timeout !== 'number' || timeout <= 0) {
+            return res.status(400).json({ error: 'La duración debe ser un número positivo.' });
+        }
+        sets.push(`global_timeout = $${sets.length + 1}`);
+        values.push(timeout);
+    }
+
+    if (omitirRegla3Meses !== undefined) {
+        if (typeof omitirRegla3Meses !== 'boolean') {
+            return res.status(400).json({ error: 'omitirRegla3Meses debe ser un booleano.' });
+        }
+        sets.push(`omitir_regla_3_meses = $${sets.length + 1}`);
+        values.push(omitirRegla3Meses);
+    }
+
+    if (habilitarImpresionFranja !== undefined) {
+        if (typeof habilitarImpresionFranja !== 'boolean') {
+            return res.status(400).json({ error: 'habilitarImpresionFranja debe ser un booleano.' });
+        }
+        sets.push(`habilitar_impresion_franja = $${sets.length + 1}`);
+        values.push(habilitarImpresionFranja);
+    }
+
+    if (sets.length === 0) {
+        return res.status(400).json({ error: 'No se enviaron campos para actualizar.' });
     }
 
     try {
         await pool.query(
-            'UPDATE session_settings SET global_timeout = $1 WHERE id = 1',
-            [timeout]
+            `UPDATE session_settings SET ${sets.join(', ')} WHERE id = 1`,
+            values
         );
 
-        res.json({ message: 'Duración global de sesión actualizada exitosamente.' });
+        res.json({ message: 'Configuración global actualizada exitosamente.' });
     } catch (err) {
         console.error('❌ Error al actualizar configuración global:', err.message);
-        res.status(500).json({ error: 'Error al actualizar la duración global de sesión' });
+        res.status(500).json({ error: 'Error al actualizar la configuración global' });
     }
 };
 // Actualizar duración de sesión específica para usuario
