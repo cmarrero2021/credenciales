@@ -126,7 +126,7 @@
             <q-checkbox
               v-model="props.row.entregado"
               dense
-              :disable="!props.row.historico_id"
+              :disable="!props.row.historico_id && !props.row.entregado"
               @update:model-value="val => toggleEntregado(props.row, val)"
             />
           </template>
@@ -764,8 +764,12 @@ function hasRealPhoto(foto_url) {
 }
 
 async function toggleEntregado(row, val) {
-  if (!row.historico_id) {
+  if (!row.historico_id && val) {
     Notify.create({ type: 'warning', message: 'Este servidor no tiene credencial impresa para marcar como entregado' })
+    row.entregado = false
+    return
+  }
+  if (!row.historico_id && !val) {
     row.entregado = false
     return
   }
